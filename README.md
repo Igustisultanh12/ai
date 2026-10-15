@@ -50,6 +50,12 @@ XZY adalah platform AI chat dan vibecoding modern berkinerja tinggi. Pengguna me
 
 ---
 
+### Chat: Pilih Model & Push ke GitHub
+
+- **Pilih model**: dropdown di header chat diisi dari katalog live TokenomixAI (`GET /v1/models`, di-cache 10 menit, endpoint aplikasi `GET /api/models`). Jika gateway tidak terjangkau, dipakai tabel `model_multipliers`. Model tersimpan per percakapan dan divalidasi di server (model di luar katalog ditolak 422, sesuai kode `model_not_available` di docs TokenomixAI).
+- **Push ke GitHub langsung dari chat**: AI diminta melabeli blok kode berkas dengan path (```` ```php:app/Models/User.php ````). Tombol **Push ke GitHub** muncul di pesan yang berisi blok kode (dan di header untuk semua berkas terbaru di percakapan). Pilih repo, branch (dibuat otomatis dari default branch jika belum ada), pesan commit, lalu semua berkas masuk dalam **satu commit** lewat GitHub Git Data API (`POST /api/conversations/{id}/github/push`). Tanpa force-push, dengan pemindaian rahasia sebelum push.
+- Token GitHub (PAT dengan izin `repo` / `Contents: Read and write`) bisa dihubungkan dari menu Pengaturan atau langsung dari dialog push.
+
 ## 3. Menjalankan Aplikasi
 
 ### Opsi A: Menggunakan Docker Compose (Rekomendasi Produksi)

@@ -193,8 +193,9 @@ class TokenomixClient
     }
 
     /**
-     * Stream chat completion with SSE parsing.
+     * Stream chat completion with SSE parsing (POST /v1/chat/completions, stream: true).
      * Invokes $callback($chunkText, $isDone, $usageData) for each incoming event.
+     * Returning false from the callback aborts the upstream request (used for "stop").
      */
     public function streamChatCompletion(array $payload, callable $callback): void
     {
@@ -215,54 +216,105 @@ class TokenomixClient
             'Accept: text/event-stream',
         ]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, $this->config?->timeout_seconds ?: 90);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_TIMEOUT, max(90, $this->config?->timeout_seconds ?: 90) * 3);
 
         $buffer = '';
+        $rawBody = '';
         $streamStarted = false;
+        $aborted = false;
+        $done = false;
+        $retryAfter = null;
 
-        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (&$buffer, &$streamStarted, $callback) {
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curlHandle, $header) use (&$retryAfter) {
+            if (stripos($header, 'Retry-After:') === 0) {
+                $retryAfter = trim(substr($header, 12));
+            }
+            return strlen($header);
+        });
+
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (&$buffer, &$rawBody, &$streamStarted, &$aborted, &$done, $callback) {
+            $httpCode = curl_getinfo($curlHandle, CURLINFO_HTTP_CODE);
+            if ($httpCode >= 400) {
+                // Error responses are plain JSON, keep them for the error message.
+                if (strlen($rawBody) < 16384) {
+                    $rawBody .= $data;
+                }
+                return strlen($data);
+            }
+
             $buffer .= $data;
             while (($pos = strpos($buffer, "\n")) !== false) {
                 $line = trim(substr($buffer, 0, $pos));
                 $buffer = substr($buffer, $pos + 1);
 
-                if (empty($line)) {
+                if ($line === '' || !str_starts_with($line, 'data:')) {
                     continue;
                 }
 
-                if (str_starts_with($line, 'data:')) {
-                    $jsonStr = trim(substr($line, 5));
-                    if ($jsonStr === '[DONE]') {
+                $jsonStr = trim(substr($line, 5));
+                if ($jsonStr === '[DONE]') {
+                    if (!$done) {
+                        $done = true;
                         $callback('', true, null);
-                        return strlen($data);
                     }
+                    continue;
+                }
 
-                    $decoded = json_decode($jsonStr, true);
-                    if (is_array($decoded)) {
-                        $streamStarted = true;
-                        $chunkContent = $decoded['choices'][0]['delta']['content'] ?? '';
-                        $usage = $decoded['usage'] ?? null;
-                        $callback($chunkContent, false, $usage);
-                    }
+                $decoded = json_decode($jsonStr, true);
+                if (!is_array($decoded)) {
+                    continue;
+                }
+
+                if (isset($decoded['error'])) {
+                    $rawBody = $jsonStr;
+                    $aborted = true;
+                    return 0;
+                }
+
+                $streamStarted = true;
+                $chunkContent = $decoded['choices'][0]['delta']['content'] ?? '';
+                $usage = $decoded['usage'] ?? null;
+                if ($callback((string) $chunkContent, false, $usage) === false) {
+                    $aborted = true;
+                    return 0; // abort transfer
                 }
             }
             return strlen($data);
         });
 
         $success = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
         curl_close($ch);
 
-        if (!$success || $httpCode >= 400) {
-            if (!$streamStarted) {
-                throw new Exception("Streaming TokenomixAI gagal dengan kode HTTP {$httpCode}: {$curlError}");
-            }
+        if ($httpCode >= 400 || ($aborted && $rawBody !== '')) {
+            $json = json_decode($rawBody, true) ?: [];
+            $error = $json['error'] ?? [];
+            throw new Exception($this->describeError(
+                $httpCode >= 400 ? $httpCode : 502,
+                (string) ($error['code'] ?? 'upstream_error'),
+                (string) ($error['message'] ?? ($rawBody ?: 'Tidak ada detail dari gateway.')),
+                $retryAfter
+            ));
+        }
+
+        if ($aborted) {
+            return; // stopped by caller
+        }
+
+        if (!$success && !$streamStarted) {
+            throw new Exception('Gagal terhubung ke TokenomixAI: ' . ($curlError ?: "HTTP {$httpCode}"));
+        }
+
+        if (!$done) {
+            $callback('', true, null);
         }
     }
 
     /**
-     * Map HTTP error codes and body to actionable Indonesian messages per PDF specs.
+     * Map HTTP error codes and body to actionable Indonesian messages
+     * (error format per https://tokenomixai.com/docs: {"error": {message, type, code}}).
      */
     protected function handleHttpError($response, int $latency = 0): array
     {
@@ -272,26 +324,27 @@ class TokenomixClient
         $code = $error['code'] ?? 'unknown_error';
         $message = $error['message'] ?? 'Terjadi kesalahan pada gateway TokenomixAI';
 
-        $actionable = match ($status) {
-            401 => 'Autentikasi gagal (401). API key salah, telah di-rotate, atau belum dikonfigurasi.',
-            403 => 'Akses ditolak (403). API key dinonaktifkan oleh upstream support. Hubungi admin.',
-            404 => ($code === 'model_not_available')
-                ? "Model tidak tersedia di TokenomixAI: {$message}. Periksa ID model pada katalog."
-                : "Endpoint tidak didukung gateway (404): {$message}",
-            429 => "Batas laju permintaan tercapai (429 Too Many Requests). Tunggu " . ($response->header('Retry-After') ?: 'beberapa') . " detik sebelum mencoba lagi.",
-            502 => ($code === 'upstream_auth')
-                ? "Masalah kredensial upstream pada gateway (502 upstream_auth). Memerlukan tindakan administrator."
-                : "Upstream sementara tidak dapat dihubungi (502 upstream_unavailable). Aman untuk dicoba ulang.",
-            default => "Error [HTTP {$status}] {$code}: {$message}",
-        };
-
         return [
             'success' => false,
             'status' => 'http_' . $status,
             'code' => $code,
-            'message' => $actionable,
+            'message' => $this->describeError($status, $code, $message, $response->header('Retry-After') ?: null),
             'latency_ms' => $latency,
             'raw_error' => $error,
         ];
+    }
+
+    protected function describeError(int $status, string $code, string $message, ?string $retryAfter = null): string
+    {
+        return match (true) {
+            $code === 'invalid_api_key' || $status === 401 => 'Autentikasi gagal (401 invalid_api_key). API key salah, telah di-rotate, atau belum dikonfigurasi.',
+            $code === 'key_disabled' || $status === 403 => 'Akses ditolak (403 key_disabled). API key dinonaktifkan, hubungi support TokenomixAI.',
+            $code === 'model_not_available' => "Model tidak tersedia di katalog TokenomixAI (404 model_not_available). Pilih model lain. Detail: {$message}",
+            $status === 404 => "Endpoint tidak didukung gateway (404): {$message}",
+            $code === 'rate_limit_exceeded' || $status === 429 => 'Batas laju permintaan tercapai (429). Tunggu ' . ($retryAfter ?: 'beberapa') . ' detik sebelum mencoba lagi.',
+            $code === 'upstream_auth' => 'Masalah kredensial di sisi gateway (502 upstream_auth). Hubungi support TokenomixAI.',
+            $code === 'upstream_unavailable' || $status === 502 => 'Upstream sementara tidak dapat dihubungi (502 upstream_unavailable). Aman untuk dicoba ulang.',
+            default => "Error [HTTP {$status}] {$code}: {$message}",
+        };
     }
 }

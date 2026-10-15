@@ -9,6 +9,7 @@ use App\Models\ModelMultiplier;
 use App\Models\Project;
 use App\Models\TokenLedger;
 use App\Models\User;
+use App\Services\Agent\ModelCatalogService;
 use App\Services\Agent\TokenomixClient;
 use App\Services\Auth\AuditService;
 use Exception;
@@ -171,7 +172,7 @@ class AdminController extends Controller
                 'masked_api_key' => $config?->masked_api_key,
                 'has_api_key' => !empty($config?->api_key_encrypted),
                 'default_model' => $config?->default_model ?? 'glm-5.1',
-                'allowed_models' => $config?->allowed_models ?? ['glm-5.1', 'deepseek-v4.1-flash', 'kimi-k2.8', 'auto'],
+                'allowed_models' => $config?->allowed_models ?? ['glm-5.1', 'glm-5.2', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-flash-0731'],
                 'max_output_tokens' => $config?->max_output_tokens ?? 4096,
                 'temperature' => $config?->temperature ?? 0.70,
                 'timeout_seconds' => $config?->timeout_seconds ?? 60,
@@ -233,6 +234,7 @@ class AdminController extends Controller
         }
 
         $config->update($updateData);
+        app(ModelCatalogService::class)->forget();
 
         $this->auditService->log('admin.agent_config_updated', $request->user(), 'AgentConfig', (string) $config->id, [
             'name' => $config->name,
@@ -296,6 +298,7 @@ class AdminController extends Controller
         try {
             $client = new TokenomixClient($config);
             $models = $client->getModels();
+            app(ModelCatalogService::class)->forget();
 
             $updatedCount = 0;
             foreach ($models as $m) {

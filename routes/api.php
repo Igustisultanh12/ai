@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\GitHubController;
+use App\Http\Controllers\Api\ModelController;
 use App\Http\Controllers\Api\PreviewController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\UsageController;
@@ -61,11 +62,15 @@ Route::middleware(['auth:web', 'active', 'mfa'])->group(function () {
         Route::post('github/push', [GitHubController::class, 'push'])->middleware('throttle:10,1');
     });
 
+    // Chat model catalog (TokenomixAI GET /v1/models)
+    Route::get('models', [ModelController::class, 'index']);
+
     // Conversations & AI Chat
     Route::apiResource('conversations', ConversationController::class);
     Route::prefix('conversations/{conversation}')->group(function () {
         Route::post('stream', [ConversationController::class, 'streamMessage'])->middleware('throttle:60,1');
         Route::post('stop', [ConversationController::class, 'stopGeneration']);
+        Route::post('github/push', [ConversationController::class, 'pushToGitHub'])->middleware('throttle:10,1');
     });
 
     // Exports readiness & downloads

@@ -55,17 +55,28 @@
         </div>
 
         <div class="flex items-center gap-2">
+          <button
+            v-if="activeConvId && conversationFiles.length > 0"
+            @click="openPushModal(conversationFiles)"
+            :disabled="isStreaming"
+            class="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-400 text-slate-300 hover:text-white disabled:opacity-40"
+            :title="`Push ${conversationFiles.length} berkas terbaru dari percakapan ini`"
+          >
+            <span class="hidden sm:inline">Push ke GitHub</span><span class="sm:hidden">⬆ GitHub</span>
+            <span class="ml-1 text-cyan-400">({{ conversationFiles.length }})</span>
+          </button>
           <span class="text-slate-400 hidden sm:inline">Model:</span>
           <select
             v-model="selectedModel"
-            class="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-xs outline-none"
+            @change="onModelChange"
+            :disabled="isStreaming || models.length === 0"
+            :title="modelSource === 'live' ? 'Katalog live dari TokenomixAI' : 'Katalog lokal (gateway tidak terjangkau)'"
+            class="max-w-[11rem] sm:max-w-[16rem] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-xs outline-none disabled:opacity-60"
           >
-            <option value="glm-5.1">glm-5.1</option>
-            <option value="glm-5.2">glm-5.2</option>
-            <option value="glm-5.3">glm-5.3</option>
-            <option value="deepseek-v4.1-flash">deepseek-v4.1-flash</option>
-            <option value="kimi-k2.8">kimi-k2.8</option>
-            <option value="auto">auto</option>
+            <option v-if="models.length === 0" value="">Memuat model...</option>
+            <option v-for="m in models" :key="m.id" :value="m.id">
+              {{ m.id }}{{ m.multiplier ? ` · ×${formatMultiplier(m.multiplier)}` : '' }}
+            </option>
           </select>
         </div>
       </div>
@@ -98,6 +109,21 @@
             :class="msg.role === 'user' ? 'bg-violet-600 text-white rounded-br-none shadow-md' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none shadow-xl'"
           >
             <div class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(msg.content)"></div>
+            <div
+              v-if="msg.role === 'assistant' && codeFilesOf(msg).length > 0"
+              class="mt-3 pt-2 border-t border-slate-800 flex flex-wrap items-center gap-2 text-[11px]"
+            >
+              <button
+                @click="openPushModal(codeFilesOf(msg))"
+                :disabled="isStreaming"
+                class="px-2.5 py-1 rounded-lg bg-violet-600/30 border border-violet-500/40 text-violet-200 hover:bg-violet-600/50 font-semibold disabled:opacity-40"
+              >
+                ⬆ Push ke GitHub
+              </button>
+              <span class="text-slate-500 truncate">
+                {{ codeFilesOf(msg).map(f => f.path || 'tanpa path').join(', ') }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -147,15 +173,31 @@
         </div>
       </div>
     </div>
+
+    <GitHubPushModal
+      :open="pushModalOpen"
+      :conversation-id="activeConvId"
+      :conversation-title="activeConv?.title"
+      :files="pushFiles"
+      @close="pushModalOpen = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import { api, getCsrfToken } from '@/api/client';
 import { useToast } from '@/composables/useToast';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import GitHubPushModal from '@/components/GitHubPushModal.vue';
+import { extractCodeFiles, collectLatestFiles, type CodeFile } from '@/utils/codeBlocks';
+
+interface ChatModel {
+    id: string;
+    multiplier: number | null;
+    description?: string | null;
+}
 
 const toast = useToast();
 
@@ -163,7 +205,13 @@ const conversations = ref<any[]>([]);
 const activeConvId = ref<string>('');
 const activeConv = ref<any>(null);
 const messages = ref<any[]>([]);
-const selectedModel = ref('glm-5.1');
+const MODEL_STORAGE_KEY = 'xzy_chat_model';
+const models = ref<ChatModel[]>([]);
+const defaultModel = ref('');
+const modelSource = ref('');
+const selectedModel = ref('');
+const pushModalOpen = ref(false);
+const pushFiles = ref<CodeFile[]>([]);
 const inputContent = ref('');
 const isStreaming = ref(false);
 const streamingText = ref('');
@@ -177,6 +225,68 @@ const renderMarkdown = (text: string) => {
         return DOMPurify.sanitize(raw);
     } catch {
         return text;
+    }
+};
+
+const formatMultiplier = (m: number) => (Number.isInteger(m) ? String(m) : m.toFixed(2).replace(/0+$/, ''));
+
+const codeFileCache = new Map<string, CodeFile[]>();
+const codeFilesOf = (msg: any): CodeFile[] => {
+    const content: string = msg.content || '';
+    const key = `${msg.id || msg.tempId}:${content.length}`;
+    let files = codeFileCache.get(key);
+    if (!files) {
+        files = extractCodeFiles(content);
+        codeFileCache.set(key, files);
+    }
+    return files;
+};
+
+const conversationFiles = computed(() => collectLatestFiles(messages.value));
+
+const openPushModal = (files: CodeFile[]) => {
+    if (!activeConvId.value) return;
+    pushFiles.value = files.map(f => ({ ...f }));
+    pushModalOpen.value = true;
+};
+
+const isKnownModel = (id?: string | null) => !!id && models.value.some(m => m.id === id);
+
+const fetchModels = async () => {
+    try {
+        const res = await api.get('/api/models');
+        models.value = res.models || [];
+        defaultModel.value = res.default || models.value[0]?.id || '';
+        modelSource.value = res.source || '';
+
+        let preferred = '';
+        try {
+            preferred = localStorage.getItem(MODEL_STORAGE_KEY) || '';
+        } catch { /* storage unavailable */ }
+
+        if (activeConv.value?.model && isKnownModel(activeConv.value.model)) {
+            selectedModel.value = activeConv.value.model;
+        } else if (!isKnownModel(selectedModel.value)) {
+            selectedModel.value = isKnownModel(preferred) ? preferred : defaultModel.value;
+        }
+    } catch (e: any) {
+        toast.error('Gagal memuat daftar model: ' + e.message);
+    }
+};
+
+const onModelChange = async () => {
+    try {
+        localStorage.setItem(MODEL_STORAGE_KEY, selectedModel.value);
+    } catch { /* storage unavailable */ }
+
+    if (!activeConvId.value || !selectedModel.value) return;
+    try {
+        const res = await api.put(`/api/conversations/${activeConvId.value}`, { model: selectedModel.value });
+        activeConv.value = res.conversation;
+        const idx = conversations.value.findIndex(c => c.id === activeConvId.value);
+        if (idx >= 0) conversations.value[idx] = { ...conversations.value[idx], model: res.conversation.model };
+    } catch (e: any) {
+        toast.error('Gagal mengganti model: ' + e.message);
     }
 };
 
@@ -235,6 +345,9 @@ const selectConversation = async (id: string) => {
         const res = await api.get(`/api/conversations/${id}`);
         activeConv.value = res.conversation;
         messages.value = res.conversation.messages || [];
+        if (isKnownModel(res.conversation.model)) {
+            selectedModel.value = res.conversation.model;
+        }
         scrollToBottom();
     } catch (e: any) {
         toast.error('Gagal memuat pesan: ' + e.message);
@@ -299,7 +412,7 @@ const sendMessage = async () => {
             },
             body: JSON.stringify({
                 content: userText,
-                model: selectedModel.value,
+                model: selectedModel.value || undefined,
             }),
         });
 
@@ -311,6 +424,7 @@ const sendMessage = async () => {
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
 
+        let streamError = '';
         if (reader) {
             let buffer = '';
             while (true) {
@@ -328,14 +442,19 @@ const sendMessage = async () => {
                         if (dataStr === '[DONE]') {
                             break;
                         }
+                        let parsed: any;
                         try {
-                            const parsed = JSON.parse(dataStr);
-                            if (parsed.content) {
-                                streamingText.value += parsed.content;
-                                scrollToBottom();
-                            }
+                            parsed = JSON.parse(dataStr);
                         } catch {
-                            // ignore parse error on fragments
+                            continue; // ignore parse error on fragments
+                        }
+                        if (parsed.content) {
+                            streamingText.value += parsed.content;
+                            scrollToBottom();
+                        } else if (parsed.event === 'stopped') {
+                            toast.info(parsed.message || 'Generasi dihentikan.');
+                        } else if (parsed.error) {
+                            streamError = parsed.error;
                         }
                     }
                 }
@@ -343,12 +462,35 @@ const sendMessage = async () => {
         }
 
         // Commit streamed message to local list
+        if (streamError) {
+            toast.error(streamError);
+        }
         messages.value.push({
             tempId: Date.now() + 1,
             role: 'assistant',
-            content: streamingText.value,
+            content: streamError
+                ? `${streamingText.value}${streamingText.value ? '\n\n' : ''}**[Kesalahan]** ${streamError}`
+                : streamingText.value,
         });
         streamingText.value = '';
+        const idx = conversations.value.findIndex(c => c.id === convId);
+        if (idx > 0) {
+            const [conv] = conversations.value.splice(idx, 1);
+            conversations.value.unshift({ ...conv, updated_at: new Date().toISOString() });
+        }
+
+        // Sync with server copy (real IDs, saved content, auto-generated title)
+        try {
+            const fresh = await api.get(`/api/conversations/${convId}`);
+            if (activeConvId.value === convId) {
+                activeConv.value = fresh.conversation;
+                messages.value = fresh.conversation.messages || messages.value;
+            }
+            const i = conversations.value.findIndex(c => c.id === convId);
+            if (i >= 0) conversations.value[i] = { ...conversations.value[i], title: fresh.conversation.title };
+        } catch {
+            // keep local copy
+        }
     } catch (e: any) {
         toast.error('Gagal mengirim pesan: ' + e.message);
         messages.value.push({
@@ -372,7 +514,8 @@ const stopGeneration = async () => {
     }
 };
 
-onMounted(() => {
+onMounted(async () => {
+    await fetchModels();
     fetchConversations();
 });
 </script>

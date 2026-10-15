@@ -284,7 +284,7 @@ const form = reactive({
     api_key: '',
     masked_api_key: '',
     default_model: 'glm-5.1',
-    allowed_models: ['glm-5.1', 'deepseek-v4.1-flash', 'kimi-k2.8', 'auto'],
+    allowed_models: ['glm-5.1', 'glm-5.2', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-flash-0731'],
     max_output_tokens: 4096,
     temperature: 0.70,
     timeout_seconds: 60,
