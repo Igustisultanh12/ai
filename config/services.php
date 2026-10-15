@@ -36,6 +36,8 @@ return [
     'tokenomix' => [
         'base_url' => env('TOKENOMIXAI_BASE_URL', 'https://api.tokenomixai.com/v1'),
         'api_key' => env('TOKENOMIXAI_API_KEY'),
+        // First retry delay (seconds) for 502/429/dropped connections; doubles each attempt
+        'retry_base_seconds' => (int) env('TOKENOMIXAI_RETRY_BASE_SECONDS', 2),
     ],
 
     'rar' => [

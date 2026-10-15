@@ -3,6 +3,7 @@
 namespace App\Services\Agent;
 
 use App\Models\AgentConfig;
+use App\Exceptions\UpstreamRetryableException;
 use Exception;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -338,20 +339,40 @@ class TokenomixClient
         if ($httpCode >= 400 || ($aborted && $rawBody !== '')) {
             $json = json_decode($rawBody, true) ?: [];
             $error = $json['error'] ?? [];
-            throw new Exception($this->describeError(
-                $httpCode >= 400 ? $httpCode : 502,
-                (string) ($error['code'] ?? 'upstream_error'),
+            $status = $httpCode >= 400 ? $httpCode : 502;
+            $code = (string) ($error['code'] ?? 'upstream_error');
+            $message = $this->describeError(
+                $status,
+                $code,
                 (string) ($error['message'] ?? ($rawBody ?: 'Tidak ada detail dari gateway.')),
                 $retryAfter
-            ));
+            );
+
+            // Per docs: 502 upstream_unavailable is safe to retry; 429 after Retry-After;
+            // plain 5xx without a code is treated the same way. upstream_auth is not retryable.
+            $retryable = $code === 'upstream_unavailable'
+                || $code === 'rate_limit_exceeded'
+                || $status === 429
+                || ($status >= 500 && !in_array($code, ['upstream_auth'], true) && $code !== 'upstream_error')
+                || ($status >= 500 && $code === 'upstream_error' && empty($error['message']));
+
+            if ($retryable) {
+                throw new UpstreamRetryableException($message, is_numeric($retryAfter) ? (int) $retryAfter : null);
+            }
+            throw new Exception($message);
         }
 
         if ($aborted) {
             return ['tool_calls' => [], 'finish_reason' => 'stop', 'aborted' => true]; // stopped by caller
         }
 
-        if (!$success && !$streamStarted) {
-            throw new Exception('Gagal terhubung ke TokenomixAI: ' . ($curlError ?: "HTTP {$httpCode}"));
+        if (!$success) {
+            // Connection dropped before or in the middle of the answer: a partial answer
+            // (possibly with truncated tool arguments) must not be used, retry instead.
+            throw new UpstreamRetryableException(
+                ($streamStarted ? 'Koneksi ke TokenomixAI terputus di tengah jawaban: ' : 'Gagal terhubung ke TokenomixAI: ')
+                . ($curlError ?: "HTTP {$httpCode}")
+            );
         }
 
         if (!$done) {

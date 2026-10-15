@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Project;
+use App\Exceptions\UpstreamRetryableException;
 use App\Models\ModelMultiplier;
 use App\Services\Agent\ChatToolbox;
 use App\Services\Agent\ModelCatalogService;
@@ -35,6 +36,8 @@ class ConversationController extends Controller
      * Default instructions for chat. Asking the model to label code fences with a
      * file path lets the UI offer a one-click "Push ke GitHub" for those files.
      */
+    public const MAX_UPSTREAM_ATTEMPTS = 4;
+
     public const CHAT_SYSTEM_PROMPT = <<<'PROMPT'
 Kamu adalah asisten pemrograman AI XZY. Jawab dalam bahasa yang dipakai pengguna.
 Jika kamu menulis isi sebuah berkas kode, beri label path relatif berkas tersebut pada pembuka blok kode dengan format ```bahasa:path/ke/berkas.ext (contoh: ```php:app/Http/Controllers/UserController.php), dan tulis isi berkas secara lengkap, bukan potongan, agar pengguna bisa langsung push ke GitHub dari chat.
@@ -46,6 +49,8 @@ Kamu punya tool untuk GitHub dan proyek XZY, dan kamu BISA membaca repo, clone, 
 - "Clone ke proyek": clone_repo_to_project, lalu project_read_files / project_write_files / project_push_to_github.
 - Membuat repo baru hanya jika diminta (github_create_repo).
 - Tulis isi berkas secara lengkap di argumen tool, jangan potongan atau placeholder. Pertahankan kode lain yang tidak diminta berubah.
+- Kerjakan perubahan besar secara bertahap: maksimal sekitar 3 berkas (kira-kira 40 KB) per pemanggilan github_push_files/project_write_files, lalu lanjutkan dengan commit berikutnya. Jawaban yang terlalu panjang rawan gagal di gateway.
+- Baca hanya berkas yang relevan dengan permintaan; jangan membaca seluruh repo.
 - Jangan pernah mengaku sudah push/clone tanpa hasil tool yang sukses. Setelah push, sebutkan repo, branch, dan link commit dari hasil tool. Jika tool gagal, jelaskan penyebabnya apa adanya.
 PROMPT;
 
@@ -372,16 +377,55 @@ PROMPT;
                         return true;
                     };
 
-                    try {
-                        $result = $this->client->streamChatCompletion($payload, $onChunk, $onTick);
-                    } catch (Exception $e) {
-                        // Model/provider without function calling: retry this step without tools
-                        if ($toolsEnabled && $turnText === '' && preg_match('/tool|function/i', $e->getMessage())) {
-                            $toolsEnabled = false;
-                            $step--;
-                            continue;
+                    $stepStartContent = $fullContent;
+                    $result = null;
+                    for ($attempt = 1; $attempt <= self::MAX_UPSTREAM_ATTEMPTS; $attempt++) {
+                        try {
+                            $result = $this->client->streamChatCompletion($payload, $onChunk, $onTick);
+                            break;
+                        } catch (UpstreamRetryableException $e) {
+                            if ($attempt >= self::MAX_UPSTREAM_ATTEMPTS || $stopped) {
+                                throw $e;
+                            }
+                            // Drop the partial answer of this step and try the same step again
+                            $fullContent = $stepStartContent;
+                            $turnText = '';
+                            $reportedUsage = null;
+                            $base = (int) config('services.tokenomix.retry_base_seconds', 2);
+                            $wait = min(30, max($e->retryAfterSeconds ?? 0, $base * 2 ** ($attempt - 1)));
+                            $send([
+                                'event' => 'retry',
+                                'attempt' => $attempt + 1,
+                                'max' => self::MAX_UPSTREAM_ATTEMPTS,
+                                'wait' => $wait,
+                                'message' => $e->getMessage(),
+                                'content' => $fullContent,
+                            ]);
+                            for ($t = 0; $t < $wait; $t++) {
+                                if (Cache::has($stopRequestedKey)) {
+                                    $stopped = true;
+                                    break;
+                                }
+                                sleep(1);
+                                $heartbeat();
+                            }
+                            if ($stopped) {
+                                break;
+                            }
+                        } catch (Exception $e) {
+                            // Model/provider without function calling: retry this step without tools
+                            if ($toolsEnabled && $turnText === '' && preg_match('/tool|function/i', $e->getMessage())) {
+                                $toolsEnabled = false;
+                                unset($payload['tools'], $payload['tool_choice']);
+                                $attempt--;
+                                continue;
+                            }
+                            throw $e;
                         }
-                        throw $e;
+                    }
+
+                    if ($result === null) {
+                        break; // stopped while waiting to retry
                     }
 
                     // Token accounting per model call (gateway formula: (prompt + completion) × multiplier)
@@ -417,14 +461,17 @@ PROMPT;
                     foreach ($result['tool_calls'] as $call) {
                         $name = $call['function']['name'];
                         $args = json_decode($call['function']['arguments'] ?: '{}', true);
-                        if (!is_array($args)) {
+                        $badArgs = !is_array($args);
+                        if ($badArgs) {
                             $args = [];
                         }
 
                         $label = $toolbox->describe($name, $args);
                         $send(['event' => 'tool', 'status' => 'running', 'id' => $call['id'], 'label' => $label]);
 
-                        if (Cache::has($stopRequestedKey)) {
+                        if ($badArgs) {
+                            $toolResult = ['error' => 'Argumen tool tidak valid atau terpotong (kemungkinan terlalu panjang). Kirim lebih sedikit berkas per panggilan, lalu coba lagi.'];
+                        } elseif (Cache::has($stopRequestedKey)) {
                             $stopped = true;
                             $toolResult = ['error' => 'Dibatalkan oleh pengguna.'];
                         } else {
@@ -483,8 +530,11 @@ PROMPT;
                     'completion_tokens' => $usageActual ? $completionTotal : null,
                 ]);
             } catch (Exception $e) {
+                $hint = $e instanceof UpstreamRetryableException
+                    ? "\n\nGateway masih belum bisa dihubungi setelah " . self::MAX_UPSTREAM_ATTEMPTS . " kali percobaan. Aksi yang sudah berhasil di atas tetap tersimpan; kirim \"lanjutkan\" untuk meneruskan."
+                    : '';
                 $assistantMsg->update([
-                    'content' => $this->activityBlock($activity) . $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage(),
+                    'content' => $this->activityBlock($activity) . $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage() . $hint,
                     'status' => 'failed',
                 ]);
 

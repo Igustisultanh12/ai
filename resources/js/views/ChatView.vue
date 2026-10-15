@@ -513,6 +513,11 @@ const sendMessage = async () => {
                                 fetchProjects();
                             }
                             scrollToBottom();
+                        } else if (parsed.event === 'retry') {
+                            // Gateway busy (502/429) or connection dropped: the server retries this step
+                            streamingText.value = parsed.content ?? streamingText.value;
+                            writingProgress.value = `Gateway TokenomixAI sibuk, mencoba ulang (${parsed.attempt}/${parsed.max}) dalam ${parsed.wait} detik...`;
+                            scrollToBottom();
                         } else if (parsed.event === 'progress') {
                             writingProgress.value = parsed.chars > 0
                                 ? `AI sedang menulis berkas... ${(parsed.chars / 1024).toFixed(1)} KB`

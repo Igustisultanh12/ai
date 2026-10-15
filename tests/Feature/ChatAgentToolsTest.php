@@ -34,6 +34,13 @@ class ScriptedTokenomixClient extends TokenomixClient
         $this->calls[] = $payload;
         $turn = array_shift($this->turns) ?? ['text' => ''];
 
+        if (!empty($turn['fail'])) {
+            if (!empty($turn['text'])) {
+                $callback($turn['text'], false, null); // partial answer before the drop
+            }
+            throw new \App\Exceptions\UpstreamRetryableException('Upstream sementara tidak dapat dihubungi (502 upstream_unavailable). Aman untuk dicoba ulang.');
+        }
+
         if (!empty($turn['text'])) {
             $callback($turn['text'], false, null);
         }
@@ -176,5 +183,56 @@ class ChatAgentToolsTest extends TestCase
         $this->assertArrayNotHasKey('logo.png', $paths); // binaries skipped
 
         Http::assertSent(fn ($req) => str_ends_with($req->url(), '/git/commits') && $req->method() === 'POST' && $req['message'] === 'update');
+    }
+
+    public function test_upstream_502_is_retried_without_losing_progress(): void
+    {
+        config(['services.tokenomix.retry_base_seconds' => 0]);
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'x', 'model' => 'glm-5.1']);
+        $this->fakeRepo();
+
+        $client = new ScriptedTokenomixClient([
+            ['tools' => [['github_list_files', ['repo' => 'budi/web']]]],
+            ['fail' => true, 'text' => 'Sebagian jawaban yang terpotong'],
+            ['fail' => true],
+            ['text' => 'Repo berisi 3 berkas.'],
+        ]);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $body = $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'cek repo budi/web'])
+            ->assertOk()->streamedContent();
+
+        $this->assertCount(4, $client->calls);
+        $this->assertStringContainsString('"event":"retry"', $body);
+
+        $reply = Message::where('conversation_id', $conv->id)->where('role', 'assistant')->first();
+        $this->assertSame('completed', $reply->status);
+        $this->assertStringContainsString('Repo berisi 3 berkas.', $reply->content);
+        $this->assertStringNotContainsString('Sebagian jawaban yang terpotong', $reply->content);
+        $this->assertStringContainsString('Melihat isi repo budi/web', $reply->content);
+    }
+
+    public function test_gives_up_after_max_attempts_and_keeps_activity(): void
+    {
+        config(['services.tokenomix.retry_base_seconds' => 0]);
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'x', 'model' => 'glm-5.1']);
+        $this->fakeRepo();
+
+        $client = new ScriptedTokenomixClient([
+            ['tools' => [['github_list_files', ['repo' => 'budi/web']]]],
+            ['fail' => true], ['fail' => true], ['fail' => true], ['fail' => true],
+        ]);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'cek repo'])
+            ->assertOk()->streamedContent();
+
+        $reply = Message::where('conversation_id', $conv->id)->where('role', 'assistant')->first();
+        $this->assertSame('failed', $reply->status);
+        $this->assertStringContainsString('Melihat isi repo budi/web', $reply->content);
+        $this->assertStringContainsString('502 upstream_unavailable', $reply->content);
+        $this->assertCount(5, $client->calls);
     }
 }
