@@ -51,7 +51,17 @@
           <button @click="isMobileListOpen = !isMobileListOpen" class="md:hidden text-slate-400 hover:text-white">
             ☰ Daftar
           </button>
-          <span class="font-semibold text-white truncate max-w-xs">{{ activeConv?.title || 'Percakapan Baru' }}</span>
+          <span class="font-semibold text-white truncate max-w-[8rem] sm:max-w-xs">{{ activeConv?.title || 'Percakapan Baru' }}</span>
+          <select
+            v-model="selectedProjectId"
+            @change="onProjectChange"
+            :disabled="isStreaming"
+            title="Proyek yang terhubung: perintah 'push ke <link GitHub>' akan mem-push seluruh berkas proyek ini"
+            class="max-w-[8rem] sm:max-w-[12rem] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs outline-none"
+          >
+            <option value="">Tanpa proyek</option>
+            <option v-for="p in projects" :key="p.id" :value="p.id">📁 {{ p.name }}</option>
+          </select>
         </div>
 
         <div class="flex items-center gap-2">
@@ -74,8 +84,8 @@
             class="max-w-[11rem] sm:max-w-[16rem] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-xs outline-none disabled:opacity-60"
           >
             <option v-if="models.length === 0" value="">Memuat model...</option>
-            <option v-for="m in models" :key="m.id" :value="m.id">
-              {{ m.id }}{{ m.multiplier ? ` · ×${formatMultiplier(m.multiplier)}` : '' }}
+            <option v-for="m in models" :key="m.id" :value="m.id" :disabled="!m.available">
+              {{ modelLabel(m) }}
             </option>
           </select>
         </div>
@@ -150,7 +160,9 @@
               v-model="inputContent"
               @keydown.enter.exact.prevent="sendMessage"
               rows="2"
-              placeholder="Ketik pesan Anda... (Enter untuk kirim, Shift+Enter untuk baris baru)"
+              :placeholder="selectedProjectId
+                ? 'Ketik pesan... atau: push ke https://github.com/username/repo-baru (push seluruh berkas proyek)'
+                : 'Ketik pesan... (Enter kirim, Shift+Enter baris baru). Push: push ke https://github.com/username/repo'"
               class="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-xs sm:text-sm text-white outline-none resize-none"
             ></textarea>
           </div>
@@ -192,12 +204,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import GitHubPushModal from '@/components/GitHubPushModal.vue';
 import { extractCodeFiles, collectLatestFiles, type CodeFile } from '@/utils/codeBlocks';
-
-interface ChatModel {
-    id: string;
-    multiplier: number | null;
-    description?: string | null;
-}
+import { useModels } from '@/composables/useModels';
 
 const toast = useToast();
 
@@ -206,10 +213,10 @@ const activeConvId = ref<string>('');
 const activeConv = ref<any>(null);
 const messages = ref<any[]>([]);
 const MODEL_STORAGE_KEY = 'xzy_chat_model';
-const models = ref<ChatModel[]>([]);
-const defaultModel = ref('');
-const modelSource = ref('');
+const { models, defaultModel, source: modelSource, load: loadModels, isAvailable: isKnownModel, label: modelLabel } = useModels();
 const selectedModel = ref('');
+const projects = ref<any[]>([]);
+const selectedProjectId = ref('');
 const pushModalOpen = ref(false);
 const pushFiles = ref<CodeFile[]>([]);
 const inputContent = ref('');
@@ -227,8 +234,6 @@ const renderMarkdown = (text: string) => {
         return text;
     }
 };
-
-const formatMultiplier = (m: number) => (Number.isInteger(m) ? String(m) : m.toFixed(2).replace(/0+$/, ''));
 
 const codeFileCache = new Map<string, CodeFile[]>();
 const codeFilesOf = (msg: any): CodeFile[] => {
@@ -250,14 +255,30 @@ const openPushModal = (files: CodeFile[]) => {
     pushModalOpen.value = true;
 };
 
-const isKnownModel = (id?: string | null) => !!id && models.value.some(m => m.id === id);
+const fetchProjects = async () => {
+    try {
+        const res = await api.get('/api/projects');
+        projects.value = res.data || res.projects || [];
+    } catch {
+        // project list is optional for chat
+    }
+};
+
+const onProjectChange = async () => {
+    if (!activeConvId.value) return;
+    try {
+        const res = await api.put(`/api/conversations/${activeConvId.value}`, { project_id: selectedProjectId.value || null });
+        activeConv.value = res.conversation;
+        const name = projects.value.find(p => p.id === selectedProjectId.value)?.name;
+        toast.info(name ? `Percakapan terhubung ke proyek ${name}.` : 'Percakapan tidak lagi terhubung ke proyek.');
+    } catch (e: any) {
+        toast.error('Gagal mengganti proyek: ' + e.message);
+    }
+};
 
 const fetchModels = async () => {
     try {
-        const res = await api.get('/api/models');
-        models.value = res.models || [];
-        defaultModel.value = res.default || models.value[0]?.id || '';
-        modelSource.value = res.source || '';
+        await loadModels(true);
 
         let preferred = '';
         try {
@@ -322,7 +343,8 @@ const startNewConversation = async (): Promise<string | null> => {
     try {
         const res = await api.post('/api/conversations', {
             title: 'Percakapan Baru',
-            model: selectedModel.value,
+            model: selectedModel.value || undefined,
+            project_id: selectedProjectId.value || undefined,
         });
         if (res.conversation?.id) {
             conversations.value.unshift(res.conversation);
@@ -348,6 +370,7 @@ const selectConversation = async (id: string) => {
         if (isKnownModel(res.conversation.model)) {
             selectedModel.value = res.conversation.model;
         }
+        selectedProjectId.value = res.conversation.project_id || '';
         scrollToBottom();
     } catch (e: any) {
         toast.error('Gagal memuat pesan: ' + e.message);
@@ -515,6 +538,7 @@ const stopGeneration = async () => {
 };
 
 onMounted(async () => {
+    fetchProjects();
     await fetchModels();
     fetchConversations();
 });

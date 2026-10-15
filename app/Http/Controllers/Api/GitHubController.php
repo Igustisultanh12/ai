@@ -105,13 +105,14 @@ class GitHubController extends Controller
         $validated = $request->validate([
             'message' => ['nullable', 'string', 'max:255'],
             'branch' => ['nullable', 'string', 'max:100'],
+            'repo' => ['nullable', 'string', 'max:255'],
         ]);
 
         $commitMsg = (!empty($validated['message'])) ? $validated['message'] : ('Update proyek XZY: ' . now()->toDateTimeString());
         $branch = (!empty($validated['branch'])) ? $validated['branch'] : ($project->github_branch ?: 'main');
 
         try {
-            $result = $this->github->pushProjectCheckpoint($project, $user, $commitMsg, $branch);
+            $result = $this->github->pushProjectCheckpoint($project, $user, $commitMsg, $branch, $validated['repo'] ?? null);
             return response()->json($result);
         } catch (Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);

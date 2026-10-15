@@ -298,25 +298,10 @@ class AdminController extends Controller
         try {
             $client = new TokenomixClient($config);
             $models = $client->getModels();
-            app(ModelCatalogService::class)->forget();
-
-            $updatedCount = 0;
-            foreach ($models as $m) {
-                $modelId = $m['id'] ?? null;
-                if ($modelId) {
-                    ModelMultiplier::firstOrCreate(
-                        ['model_id' => $modelId],
-                        [
-                            'multiplier' => 2.0000,
-                            'source' => 'TokenomixAI Catalog Sync',
-                            'supports_tools' => true,
-                            'supports_vision' => false,
-                            'description' => 'Sinkronisasi otomatis dari endpoint /v1/models',
-                        ]
-                    );
-                    $updatedCount++;
-                }
-            }
+            $catalog = app(ModelCatalogService::class);
+            $catalog->forget();
+            // Create new models and update multipliers reported by the gateway (admin overrides are kept)
+            $updatedCount = $catalog->syncMultipliers($models);
 
             return response()->json([
                 'message' => "Berhasil menyinkronkan {$updatedCount} model dari TokenomixAI.",

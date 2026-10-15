@@ -197,14 +197,10 @@
               <span class="text-slate-500">Model:</span>
               <select
                 v-model="selectedModel"
-                class="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-[11px] outline-none"
+                class="max-w-[12rem] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-[11px] outline-none"
               >
-                <option value="glm-5.1">glm-5.1 (2.0x)</option>
-                <option value="glm-5.2">glm-5.2 (2.0x)</option>
-                <option value="glm-5.3">glm-5.3 (2.0x)</option>
-                <option value="deepseek-v4.1-flash">deepseek-v4.1-flash (2.56x)</option>
-                <option value="kimi-k2.8">kimi-k2.8 (2.0x)</option>
-                <option value="auto">auto (1.0x)</option>
+                <option v-if="models.length === 0" value="">Memuat model...</option>
+                <option v-for="m in models" :key="m.id" :value="m.id" :disabled="!m.available">{{ modelLabel(m) }}</option>
               </select>
             </div>
 
@@ -287,7 +283,7 @@
                 @keydown.ctrl.enter="triggerRun"
                 @keydown.meta.enter="triggerRun"
                 rows="3"
-                placeholder="Deskripsikan fitur atau perbaikan kode... (Ctrl+Enter untuk kirim)"
+                placeholder="Deskripsikan fitur/perbaikan kode, atau: push ke https://github.com/username/repo-baru (Ctrl+Enter untuk kirim)"
                 class="w-full p-3 pr-20 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-xs text-slate-100 outline-none resize-none"
               ></textarea>
               <button
@@ -475,13 +471,13 @@
 
         <form v-else @submit.prevent="handleGithubPush" class="space-y-4 text-xs">
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">Target Repository (owner/repo)</label>
+            <label class="block font-semibold text-slate-300 mb-1">Target Repository (link GitHub atau owner/repo)</label>
             <input
               v-model="githubForm.repo"
               type="text"
               required
               class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white outline-none font-mono"
-              placeholder="username/my-vibecoding-app"
+              placeholder="https://github.com/username/repo atau username/repo"
             />
           </div>
 
@@ -532,6 +528,7 @@ import { ref, reactive, onMounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '@/api/client';
 import { useToast } from '@/composables/useToast';
+import { useModels } from '@/composables/useModels';
 import MonacoEditor from '@/components/MonacoEditor.vue';
 import DiffViewer from '@/components/DiffViewer.vue';
 
@@ -550,7 +547,8 @@ const originalFileContent = ref<string>('');
 const mobileActiveTab = ref<'files' | 'editor' | 'ai'>('editor');
 const rightTab = ref<'agent' | 'preview' | 'logs' | 'checkpoints'>('agent');
 
-const selectedModel = ref('glm-5.1');
+const { models, defaultModel, load: loadModels, isAvailable: isModelAvailable, label: modelLabel } = useModels();
+const selectedModel = ref('');
 const autoApply = ref(true);
 const promptInput = ref('');
 const isRunning = ref(false);
@@ -704,7 +702,18 @@ const triggerRun = async () => {
         });
 
         currentRun.value = res.run;
-        toast.success('Siklus vibecoding selesai.');
+        if (res.project) {
+            project.value = { ...project.value, ...res.project };
+            githubForm.repo = res.project.github_repo || githubForm.repo;
+            githubForm.branch = res.project.github_branch || githubForm.branch;
+        }
+        if (res.push?.success) {
+            toast.success(res.push.message);
+        } else if (res.push && !res.push.success) {
+            toast.warning(res.push.message);
+        } else if (res.run?.type !== 'github_push') {
+            toast.success('Siklus vibecoding selesai.');
+        }
         promptInput.value = '';
         await refreshFiles();
         if (activeFilePath.value) {
@@ -712,7 +721,12 @@ const triggerRun = async () => {
         }
         fetchCheckpoints();
     } catch (e: any) {
-        toast.error('Vibecoding gagal: ' + e.message);
+        if (e.data?.run) {
+            currentRun.value = e.data.run; // failed GitHub push: show the reason in the run panel
+            toast.error(e.message);
+        } else {
+            toast.error('Vibecoding gagal: ' + e.message);
+        }
     } finally {
         isRunning.value = false;
     }
@@ -830,5 +844,10 @@ const handleGithubPush = async () => {
 onMounted(() => {
     fetchProjectDetails();
     fetchCheckpoints();
+    loadModels()
+        .then(() => {
+            if (!isModelAvailable(selectedModel.value)) selectedModel.value = defaultModel.value;
+        })
+        .catch((e: any) => toast.error('Gagal memuat daftar model: ' + e.message));
 });
 </script>

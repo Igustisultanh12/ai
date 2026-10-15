@@ -168,13 +168,16 @@ class GitHubService
         Project $project,
         User $user,
         string $commitMessage,
-        ?string $targetBranch = null
+        ?string $targetBranch = null,
+        ?string $targetRepo = null
     ): array {
-        $repoFullName = $project->github_repo;
-        $branch = $targetBranch ?: ($project->github_branch ?: 'main');
+        $repoFullName = $this->normalizeRepo((string) ($targetRepo ?: $project->github_repo));
+        $sameRepo = $repoFullName !== null && strcasecmp($repoFullName, (string) $project->github_repo) === 0;
+        // A different (new) repo starts from its own default branch unless one was named
+        $branch = $targetBranch ?: ($sameRepo ? ($project->github_branch ?: 'main') : '');
 
         if (empty($repoFullName)) {
-            throw new Exception("Repositori GitHub target belum diatur pada proyek ini.");
+            throw new Exception("Repositori GitHub target belum diatur pada proyek ini. Kirim link repo, misalnya: push ke https://github.com/username/nama-repo");
         }
 
         $allFiles = $project->files()->pluck('content', 'path')->toArray();
@@ -183,6 +186,11 @@ class GitHubService
             'audit_type' => 'Project',
             'audit_id' => (string) $project->id,
         ]);
+
+        // Remember the repo/branch the user pushed to as this project's GitHub target
+        if ($project->github_repo !== $result['repo'] || $project->github_branch !== $result['branch']) {
+            $project->update(['github_repo' => $result['repo'], 'github_branch' => $result['branch']]);
+        }
 
         // Save commit SHA on active checkpoint
         if ($project->activeCheckpoint) {
@@ -208,11 +216,22 @@ class GitHubService
         array $context = []
     ): array {
         $token = $this->getUserToken($user);
-        $repoFullName = trim($repoFullName);
-        $branch = trim($branch) ?: 'main';
+        $normalizedRepo = $this->normalizeRepo($repoFullName);
+        $branch = trim($branch);
 
-        if (!preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repoFullName)) {
-            throw new Exception("Nama repositori tidak valid. Gunakan format pemilik/nama-repo.");
+        if ($normalizedRepo === null) {
+            throw new Exception("Repositori tidak valid: {$repoFullName}. Gunakan link https://github.com/pemilik/nama-repo atau format pemilik/nama-repo.");
+        }
+        $repoFullName = $normalizedRepo;
+
+        if ($branch === '') {
+            // No branch named: use the repository's default branch (main for a brand-new empty repo)
+            $repoInfo = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $token,
+                'Accept' => 'application/vnd.github+json',
+                'User-Agent' => 'XZY-Platform',
+            ])->timeout(30)->get("https://api.github.com/repos/{$repoFullName}");
+            $branch = $repoInfo->successful() ? ($repoInfo->json('default_branch') ?: 'main') : 'main';
         }
 
         if (!$this->isValidBranchName($branch)) {
@@ -268,27 +287,63 @@ class GitHubService
         $baseTreeSha = null;
         $branchExists = false;
 
+        $repoEmpty = false;
         $refRes = $http()->get("{$api}/git/ref/heads/" . $this->encodeRef($branch));
         if ($refRes->successful()) {
             $branchExists = true;
             $parentCommitSha = $refRes->json('object.sha');
+        } elseif ($refRes->status() === 409) {
+            // "Git Repository is empty." — freshly created repo without any commit
+            $repoEmpty = true;
         } elseif ($refRes->status() === 404) {
             $repoRes = $http()->get($api);
             if (!$repoRes->successful()) {
-                throw new Exception("Repositori {$repoFullName} tidak ditemukan atau token tidak punya akses (HTTP {$repoRes->status()}).");
+                throw new Exception("Repositori {$repoFullName} tidak ditemukan atau token GitHub Anda tidak punya akses ke repo itu (HTTP {$repoRes->status()}). Pastikan repo sudah dibuat dan, untuk fine-grained token, repo tersebut termasuk dalam akses token dengan izin Contents: Read and write.");
+            }
+            if (($repoRes->json('permissions.push') ?? true) === false) {
+                throw new Exception("Token GitHub Anda tidak punya izin menulis (push) ke {$repoFullName}.");
             }
             $defaultBranch = $repoRes->json('default_branch');
             if ($defaultBranch) {
                 $baseRef = $http()->get("{$api}/git/ref/heads/" . $this->encodeRef($defaultBranch));
                 if ($baseRef->successful()) {
                     $parentCommitSha = $baseRef->json('object.sha');
+                } elseif ($baseRef->status() === 409 || $baseRef->status() === 404) {
+                    $repoEmpty = (int) ($repoRes->json('size') ?? 0) === 0 || $baseRef->status() === 409;
                 }
+            } else {
+                $repoEmpty = true;
             }
         } else {
             throw new Exception("Gagal membaca branch {$branch} (HTTP {$refRes->status()}): " . ($refRes->json('message') ?? $refRes->body()));
         }
 
-        if ($parentCommitSha) {
+        // Empty repository: the Git Data API refuses blobs until a first commit exists.
+        // Create that first commit with the Contents API, then continue normally.
+        if ($repoEmpty) {
+            $firstPath = array_key_first($filesToPush);
+            $initRes = $http()->put("{$api}/contents/" . $this->encodeRef($firstPath), [
+                'message' => $commitMessage,
+                'content' => base64_encode($filesToPush[$firstPath]),
+                'branch' => $branch,
+            ]);
+
+            if (!$initRes->successful()) {
+                throw new Exception("Gagal membuat commit awal di repositori kosong {$repoFullName} (HTTP {$initRes->status()}): " . ($initRes->json('message') ?? $initRes->body()));
+            }
+
+            $parentCommitSha = $initRes->json('commit.sha');
+            $baseTreeSha = $initRes->json('commit.tree.sha');
+            $branchExists = true;
+            $pushedFirst = [$firstPath];
+            unset($filesToPush[$firstPath]);
+
+            if (empty($filesToPush)) {
+                return $this->finishPush($user, $repoFullName, $branch, $parentCommitSha, $pushedFirst, true, $context);
+            }
+        }
+
+        if ($parentCommitSha && !$baseTreeSha) {
             $commitRes = $http()->get("{$api}/git/commits/{$parentCommitSha}");
             if ($commitRes->successful()) {
                 $baseTreeSha = $commitRes->json('tree.sha');
@@ -360,24 +415,68 @@ class GitHubService
             throw new Exception("Gagal memperbarui referensi branch GitHub: " . $errorBody);
         }
 
+        return $this->finishPush(
+            $user,
+            $repoFullName,
+            $branch,
+            $newCommitSha,
+            array_merge($pushedFirst ?? [], array_keys($filesToPush)),
+            !$branchExists || $repoEmpty,
+            $context
+        );
+    }
+
+    protected function finishPush(
+        User $user,
+        string $repoFullName,
+        string $branch,
+        string $commitSha,
+        array $paths,
+        bool $branchCreated,
+        array $context
+    ): array {
         $this->audit->log('github.push', $user, $context['audit_type'] ?? 'GitHub', $context['audit_id'] ?? $repoFullName, [
             'repo' => $repoFullName,
             'branch' => $branch,
-            'commit_sha' => $newCommitSha,
-            'files' => count($treeItems),
-            'branch_created' => !$branchExists,
+            'commit_sha' => $commitSha,
+            'files' => count($paths),
+            'branch_created' => $branchCreated,
         ]);
 
         return [
             'success' => true,
-            'commit_sha' => $newCommitSha,
-            'commit_url' => "https://github.com/{$repoFullName}/commit/{$newCommitSha}",
+            'commit_sha' => $commitSha,
+            'commit_url' => "https://github.com/{$repoFullName}/commit/{$commitSha}",
             'repo' => $repoFullName,
+            'repo_url' => "https://github.com/{$repoFullName}",
             'branch' => $branch,
-            'branch_created' => !$branchExists,
-            'files' => array_keys($filesToPush),
-            'message' => "Berhasil push " . count($treeItems) . " berkas ke {$repoFullName}:{$branch}",
+            'branch_created' => $branchCreated,
+            'files' => $paths,
+            'message' => "Berhasil push " . count($paths) . " berkas ke {$repoFullName}:{$branch}",
         ];
+    }
+
+    /**
+     * Accept "owner/repo", "https://github.com/owner/repo(.git)", "github.com/owner/repo/tree/x"
+     * or "git@github.com:owner/repo.git" and return "owner/repo" (null when invalid).
+     */
+    public function normalizeRepo(string $input): ?string
+    {
+        $input = trim($input);
+        if ($input === '') {
+            return null;
+        }
+
+        if (preg_match('#^(?:https?://)?(?:www\.)?github\.com[/:]([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?:/.*)?$#i', $input, $m)
+            || preg_match('#^git@github\.com:([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?$#i', $input, $m)
+            || preg_match('#^([A-Za-z0-9-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?$#', $input, $m)) {
+            if ($m[2] === '.' || $m[2] === '..') {
+                return null;
+            }
+            return $m[1] . '/' . $m[2];
+        }
+
+        return null;
     }
 
     /**

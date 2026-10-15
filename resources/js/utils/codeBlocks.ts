@@ -108,3 +108,16 @@ export function suggestPath(file: CodeFile, index: number): string {
     const ext = EXT_BY_LANG[file.language?.toLowerCase()] || file.language?.toLowerCase() || 'txt';
     return `snippet-${index + 1}.${ext}`;
 }
+
+/**
+ * Accept "owner/repo", "https://github.com/owner/repo(.git)" or "git@github.com:owner/repo.git".
+ */
+export function normalizeRepo(input: string): string | null {
+    const v = (input || '').trim();
+    const m =
+        v.match(/^(?:https?:\/\/)?(?:www\.)?github\.com[\/:]([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\/.*)?$/i) ||
+        v.match(/^git@github\.com:([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/i) ||
+        v.match(/^([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/);
+    if (!m || m[2] === '.' || m[2] === '..') return null;
+    return `${m[1]}/${m[2]}`;
+}

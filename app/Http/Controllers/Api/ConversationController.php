@@ -9,6 +9,8 @@ use App\Models\Project;
 use App\Services\Agent\ModelCatalogService;
 use App\Services\Agent\TokenomixClient;
 use App\Services\GitHub\GitHubService;
+use App\Services\GitHub\PushCommandParser;
+use App\Support\CodeBlockExtractor;
 use App\Services\Auth\AuditService;
 use App\Services\Usage\TokenAccountingService;
 use Exception;
@@ -33,6 +35,7 @@ class ConversationController extends Controller
 Kamu adalah asisten pemrograman AI XZY. Jawab dalam bahasa yang dipakai pengguna.
 Jika kamu menulis isi sebuah berkas kode, beri label path relatif berkas tersebut pada pembuka blok kode dengan format ```bahasa:path/ke/berkas.ext (contoh: ```php:app/Http/Controllers/UserController.php), dan tulis isi berkas secara lengkap, bukan potongan, agar pengguna bisa langsung push ke GitHub dari chat.
 Untuk potongan kode contoh yang bukan berkas utuh, gunakan blok kode biasa tanpa path.
+Pengguna bisa meminta push ke GitHub dengan menulis "push ke https://github.com/pemilik/repo"; sistem yang menjalankannya, jadi jangan pernah mengaku sudah melakukan push sendiri.
 PROMPT;
 
     public function __construct(
@@ -126,7 +129,12 @@ PROMPT;
         $validated = $request->validate([
             'title' => ['sometimes', 'required', 'string', 'max:255'],
             'model' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'project_id' => ['sometimes', 'nullable', 'uuid'],
         ]);
+
+        if (!empty($validated['project_id'])) {
+            Project::where('id', $validated['project_id'])->where('user_id', $request->user()->id)->firstOrFail();
+        }
 
         if (array_key_exists('model', $validated)) {
             $model = $this->resolveModel($validated['model']);
@@ -177,6 +185,12 @@ PROMPT;
         // Remember the user's model choice for this conversation
         if ($conversation->model !== $selectedModel) {
             $conversation->update(['model' => $selectedModel]);
+        }
+
+        // "push ke https://github.com/user/repo" is executed by the server, not the model
+        $pushCommand = app(PushCommandParser::class)->parse($validated['content']);
+        if ($pushCommand && $pushCommand['push_only']) {
+            return $this->streamPushCommand($conversation, $user, $validated['content'], $pushCommand);
         }
 
         // Check user quota
@@ -352,6 +366,99 @@ PROMPT;
     }
 
     /**
+     * Execute a chat "push ke <github link>" command and answer as an SSE stream,
+     * so the chat UI renders it like any other assistant reply.
+     */
+    protected function streamPushCommand(Conversation $conversation, $user, string $content, array $command): StreamedResponse
+    {
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => $content,
+            'status' => 'completed',
+        ]);
+
+        if ($conversation->title === 'Percakapan Baru') {
+            $conversation->update(['title' => mb_substr('Push ke ' . $command['repo'], 0, 40)]);
+        }
+
+        $reply = $this->runPushCommand($conversation, $user, $command);
+
+        $assistantMsg = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => $reply,
+            'status' => 'completed',
+        ]);
+        $conversation->touch();
+
+        return response()->stream(function () use ($reply, $assistantMsg) {
+            echo "data: " . json_encode(['event' => 'start', 'assistant_message_id' => $assistantMsg->id, 'github_push' => true]) . "\n\n";
+            echo "data: " . json_encode(['content' => $reply]) . "\n\n";
+            echo "data: [DONE]\n\n";
+            flush();
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    protected function runPushCommand(Conversation $conversation, $user, array $command): string
+    {
+        $github = app(GitHubService::class);
+        $commitMessage = $command['commit_message'] ?: null;
+
+        try {
+            if ($conversation->project_id) {
+                $project = Project::where('id', $conversation->project_id)->where('user_id', $user->id)->firstOrFail();
+                $result = $github->pushProjectCheckpoint(
+                    $project,
+                    $user,
+                    $commitMessage ?: ('Push dari XZY: ' . $project->name),
+                    $command['branch'] ?: null,
+                    $command['repo']
+                );
+                $what = "proyek **{$project->name}**";
+            } else {
+                $contents = $conversation->messages()
+                    ->where('role', 'assistant')
+                    ->where('status', '!=', 'failed')
+                    ->pluck('content');
+                $files = CodeBlockExtractor::latestFiles($contents);
+
+                if (empty($files)) {
+                    return "Belum ada berkas untuk di-push ke **{$command['repo']}**.\n\n"
+                        . "Percakapan ini belum terhubung ke proyek, dan belum ada berkas berlabel path di chat. "
+                        . "Pilih proyek di header chat (agar seluruh berkas proyek yang di-push), atau minta AI menulis berkas dengan format "
+                        . "```bahasa:path/berkas.ext lalu kirim lagi perintah push.";
+                }
+
+                $result = $github->pushFiles(
+                    $user,
+                    $command['repo'],
+                    $command['branch'] ?: '',
+                    $files,
+                    $commitMessage ?: ('Update dari chat XZY: ' . mb_substr($conversation->title ?: 'percakapan', 0, 60)),
+                    ['audit_type' => 'Conversation', 'audit_id' => (string) $conversation->id]
+                );
+                $what = count($result['files']) . ' berkas dari chat ini';
+            }
+        } catch (Exception $e) {
+            return "❌ **Push ke GitHub gagal** ({$command['repo']})\n\n" . $e->getMessage();
+        }
+
+        $fileList = implode("\n", array_map(fn ($f) => "- `{$f}`", array_slice($result['files'], 0, 30)));
+        if (count($result['files']) > 30) {
+            $fileList .= "\n- … dan " . (count($result['files']) - 30) . ' berkas lain';
+        }
+
+        return "✅ **Berhasil push {$what}** ke [{$result['repo']}]({$result['repo_url']}) branch `{$result['branch']}`"
+            . ($result['branch_created'] ? ' (branch baru)' : '') . ".\n\n"
+            . "Commit: [{$result['commit_sha']}]({$result['commit_url']})\n\n{$fileList}";
+    }
+
+    /**
      * Push files written in the chat straight to a GitHub repository branch.
      */
     public function pushToGitHub(Request $request, string $id, GitHubService $github): JsonResponse
@@ -360,7 +467,7 @@ PROMPT;
         $user = $request->user();
 
         $validated = $request->validate([
-            'repo' => ['required', 'string', 'max:200', 'regex:#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#'],
+            'repo' => ['required', 'string', 'max:255'],
             'branch' => ['required', 'string', 'max:100'],
             'commit_message' => ['nullable', 'string', 'max:500'],
             'files' => ['required', 'array', 'min:1', 'max:100'],

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\ProjectRun;
 use App\Services\Agent\VibecodingAgent;
+use App\Services\GitHub\GitHubService;
+use App\Services\GitHub\PushCommandParser;
 use App\Services\Sandbox\SandboxRunner;
 use App\Services\Sandbox\WorkspaceManager;
 use Exception;
@@ -41,6 +43,13 @@ class VibecodingController extends Controller
 
         $autoApply = $validated['auto_apply'] ?? true;
 
+        // "push ke https://github.com/user/repo" -> push this project to that repo
+        $pushCommand = app(PushCommandParser::class)->parse($validated['prompt']);
+
+        if ($pushCommand && $pushCommand['push_only']) {
+            return $this->pushProjectFromPrompt($project, $user, $pushCommand);
+        }
+
         try {
             $run = $this->agent->executeRun(
                 project: $project,
@@ -50,9 +59,31 @@ class VibecodingController extends Controller
                 autoApply: $autoApply
             );
 
+            $push = null;
+            if ($pushCommand) {
+                // Coding task + push in one prompt: push only once the changes are applied and valid
+                if ($run->status === 'completed' && $autoApply) {
+                    $push = $this->tryPush($project->fresh(), $user, $pushCommand);
+                    $run->update([
+                        'build_log' => trim(($run->build_log ?? '') . "\n" . ($push['success']
+                            ? "✓ Push ke GitHub: {$push['commit_url']}"
+                            : "⚠ Push ke GitHub gagal: {$push['message']}")),
+                    ]);
+                } else {
+                    $push = [
+                        'success' => false,
+                        'message' => $autoApply
+                            ? 'Push ke GitHub dilewati karena run vibecoding belum lulus verifikasi.'
+                            : 'Push ke GitHub dilewati: terapkan perubahan dulu, lalu kirim lagi perintah push.',
+                    ];
+                }
+            }
+
             return response()->json([
                 'message' => 'Siklus vibecoding berhasil dijalankan.',
-                'run' => $run,
+                'run' => $run->fresh(),
+                'push' => $push,
+                'project' => $project->fresh(),
             ]);
         } catch (Exception $e) {
             return response()->json([
@@ -127,6 +158,53 @@ class VibecodingController extends Controller
             'build_log' => $check['log'],
             'project' => $project->fresh(['files', 'activeCheckpoint']),
         ]);
+    }
+
+    /**
+     * Handle a prompt that only asks to push the project to a GitHub repo link.
+     */
+    protected function pushProjectFromPrompt(Project $project, $user, array $command): JsonResponse
+    {
+        $push = $this->tryPush($project, $user, $command);
+
+        $run = ProjectRun::create([
+            'project_id' => $project->id,
+            'user_id' => $user->id,
+            'type' => 'github_push',
+            'status' => $push['success'] ? 'completed' : 'failed',
+            'plan' => $push['success']
+                ? "Proyek \"{$project->name}\" berhasil di-push ke https://github.com/{$push['repo']} (branch {$push['branch']}).\nCommit: {$push['commit_url']}\n\nRepo ini sekarang tersimpan sebagai target GitHub proyek."
+                : "Push ke GitHub gagal: {$push['message']}",
+            'proposed_patches' => [],
+            'build_log' => $push['success']
+                ? "✓ " . $push['message'] . "\n" . implode("\n", array_map(fn ($f) => " - {$f}", $push['files']))
+                : "✗ " . $push['message'],
+            'iterations_count' => 0,
+            'started_at' => now(),
+            'completed_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => $push['message'],
+            'run' => $run,
+            'push' => $push,
+            'project' => $project->fresh(),
+        ], $push['success'] ? 200 : 422);
+    }
+
+    protected function tryPush(Project $project, $user, array $command): array
+    {
+        try {
+            return app(GitHubService::class)->pushProjectCheckpoint(
+                $project,
+                $user,
+                $command['commit_message'] ?: ('Push dari XZY: ' . $project->name),
+                $command['branch'] ?: null,
+                $command['repo']
+            );
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
     }
 
     protected function getAuthorizedProject(Request $request, string $id): Project

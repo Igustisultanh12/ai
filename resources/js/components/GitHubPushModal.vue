@@ -48,7 +48,7 @@
               <input
                 v-model="repo"
                 list="gh-repo-list"
-                placeholder="pemilik/nama-repo"
+                placeholder="https://github.com/pemilik/nama-repo"
                 @change="onRepoChange"
                 class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-white font-mono outline-none"
               />
@@ -140,7 +140,7 @@
 import { ref, computed, watch } from 'vue';
 import { api } from '@/api/client';
 import { useToast } from '@/composables/useToast';
-import { isSafePath, normalisePath, suggestPath, type CodeFile } from '@/utils/codeBlocks';
+import { isSafePath, normalisePath, normalizeRepo, suggestPath, type CodeFile } from '@/utils/codeBlocks';
 
 const props = defineProps<{
   open: boolean;
@@ -175,7 +175,7 @@ let keySeq = 0;
 const selectedRows = computed(() => rows.value.filter(r => r.selected));
 const selectedCount = computed(() => selectedRows.value.length);
 const canPush = computed(() =>
-  /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo.value.trim()) &&
+  normalizeRepo(repo.value) !== null &&
   branch.value.trim() !== '' &&
   selectedCount.value > 0 &&
   selectedRows.value.every(r => isSafePath(normalisePath(r.path)))
@@ -243,8 +243,8 @@ const loadRepos = async () => {
 
 const loadBranches = async () => {
   branches.value = [];
-  const r = repo.value.trim();
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(r)) return;
+  const r = normalizeRepo(repo.value);
+  if (!r) return;
   try {
     const res = await api.get(`/api/github/branches?repo=${encodeURIComponent(r)}`);
     branches.value = res.branches || [];
@@ -254,7 +254,9 @@ const loadBranches = async () => {
 };
 
 const onRepoChange = () => {
-  const found = repos.value.find(r => r.full_name === repo.value.trim());
+  const normalized = normalizeRepo(repo.value);
+  if (normalized && normalized !== repo.value.trim()) repo.value = normalized;
+  const found = repos.value.find(r => r.full_name === normalized);
   if (found?.default_branch && (!branch.value || branch.value === 'main')) branch.value = found.default_branch;
   loadBranches();
 };
@@ -269,7 +271,7 @@ const push = async () => {
   result.value = null;
   try {
     const res = await api.post(`/api/conversations/${props.conversationId}/github/push`, {
-      repo: repo.value.trim(),
+      repo: normalizeRepo(repo.value) || repo.value.trim(),
       branch: branch.value.trim(),
       commit_message: commitMessage.value.trim(),
       files: selectedRows.value.map(r => ({ path: normalisePath(r.path), content: r.content })),

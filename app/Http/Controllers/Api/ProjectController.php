@@ -117,6 +117,17 @@ class ProjectController extends Controller
             'auto_push_github' => ['sometimes', 'boolean'],
         ]);
 
+        if (!empty($validated['github_repo'])) {
+            $repo = app(\App\Services\GitHub\GitHubService::class)->normalizeRepo($validated['github_repo']);
+            if ($repo === null) {
+                return response()->json([
+                    'message' => 'Repositori GitHub tidak valid. Gunakan link https://github.com/pemilik/nama-repo atau format pemilik/nama-repo.',
+                    'errors' => ['github_repo' => ['Format repositori tidak valid.']],
+                ], 422);
+            }
+            $validated['github_repo'] = $repo;
+        }
+
         $project->update($validated);
 
         return response()->json([
