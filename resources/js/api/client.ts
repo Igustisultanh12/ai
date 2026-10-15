@@ -13,6 +13,17 @@ export function getCsrfToken(): string {
     return match ? decodeURIComponent(match[2]) : '';
 }
 
+const PUBLIC_PATHS = ['/', '/login', '/register'];
+
+/**
+ * Session expired: send the user back to the login page (once).
+ */
+export function redirectToLoginIfNeeded(): void {
+    if (typeof window === 'undefined' || PUBLIC_PATHS.includes(window.location.pathname)) return;
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?redirect=${next}`;
+}
+
 export interface ApiResponse<T = any> {
     data?: T;
     message?: string;
@@ -51,6 +62,10 @@ export async function apiRequest<T = any>(
 
     const isJson = response.headers.get('content-type')?.includes('application/json');
     const data = isJson ? await response.json() : await response.text();
+
+    if (response.status === 401) {
+        redirectToLoginIfNeeded();
+    }
 
     if (!response.ok) {
         const errorMsg = data?.message || `Permintaan gagal dengan kode HTTP ${response.status}`;

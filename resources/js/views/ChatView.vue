@@ -210,7 +210,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
-import { api, getCsrfToken } from '@/api/client';
+import { api, getCsrfToken, redirectToLoginIfNeeded } from '@/api/client';
 import { useToast } from '@/composables/useToast';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -452,6 +452,10 @@ const sendMessage = async () => {
                 model: selectedModel.value || undefined,
             }),
         });
+
+        if (response.status === 401) {
+            redirectToLoginIfNeeded();
+        }
 
         if (!response.ok) {
             const errJson = await response.json().catch(() => ({}));

@@ -29,6 +29,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ]);
 
+        // Guests hitting the API get a JSON 401 (no redirect); browser pages go to the SPA login.
+        // Without this, Authenticate tries route('login'), which does not exist -> 500 error.
+        $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/login');
+
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
             'active' => EnsureUserActive::class,
