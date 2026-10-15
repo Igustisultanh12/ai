@@ -70,12 +70,12 @@ class ConversationController extends Controller
         }
 
         $activeConfig = AgentConfig::where('is_active', true)->first() ?: AgentConfig::first();
-        $model = $validated['model'] ?: ($activeConfig?->default_model ?: 'glm-5.1');
+        $model = (!empty($validated['model'])) ? $validated['model'] : ($activeConfig?->default_model ?: 'glm-5.1');
 
         $conversation = Conversation::create([
             'user_id' => $user->id,
             'project_id' => $validated['project_id'] ?? null,
-            'title' => $validated['title'] ?: 'Percakapan Baru',
+            'title' => (!empty($validated['title'])) ? $validated['title'] : 'Percakapan Baru',
             'model' => $model,
         ]);
 
@@ -142,7 +142,7 @@ class ConversationController extends Controller
             'stream_id' => ['nullable', 'string'], // Reconnect client identifier
         ]);
 
-        $selectedModel = $validated['model'] ?: $conversation->model;
+        $selectedModel = (!empty($validated['model'])) ? $validated['model'] : $conversation->model;
 
         // Check user quota
         if (!$this->accounting->checkQuota($user, 1000, $selectedModel)) {
@@ -151,7 +151,7 @@ class ConversationController extends Controller
             ], 429);
         }
 
-        $streamId = $validated['stream_id'] ?: (string) Str::uuid();
+        $streamId = (!empty($validated['stream_id'])) ? $validated['stream_id'] : (string) Str::uuid();
         $cacheLockKey = "stream_lock:{$streamId}";
 
         // Prevent duplicate upstream request on client reconnect

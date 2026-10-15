@@ -2,7 +2,7 @@
  * API HTTP client for XZY with HttpOnly session cookies, CSRF protection, and error handling.
  */
 
-function getCsrfToken(): string {
+export function getCsrfToken(): string {
     const meta = document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null;
     if (meta && meta.content) {
         return meta.content;

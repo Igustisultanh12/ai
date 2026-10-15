@@ -4,7 +4,7 @@
     "name": "runtime-core.esm-bundler"
   },
   "resources/css/app.css": {
-    "file": "assets/app-BsG5gFeJ.css",
+    "file": "assets/app-BTsa825X.css",
     "name": "app",
     "names": [
       "app.css"
@@ -13,7 +13,7 @@
     "isEntry": true
   },
   "resources/js/app.ts": {
-    "file": "assets/app-CDdkl2P2.js",
+    "file": "assets/app-D-QvoATe.js",
     "name": "app",
     "src": "resources/js/app.ts",
     "isEntry": true,
@@ -36,11 +36,11 @@
       "resources/js/views/AdminAuditView.vue"
     ],
     "css": [
-      "assets/app-BsG5gFeJ.css"
+      "assets/app-BTsa825X.css"
     ]
   },
   "resources/js/views/AdminAgentView.vue": {
-    "file": "assets/AdminAgentView-KdXMTJ1R.js",
+    "file": "assets/AdminAgentView-gYHPNyCQ.js",
     "name": "AdminAgentView",
     "src": "resources/js/views/AdminAgentView.vue",
     "isDynamicEntry": true,
@@ -50,7 +50,7 @@
     ]
   },
   "resources/js/views/AdminAuditView.vue": {
-    "file": "assets/AdminAuditView-3kYoHDib.js",
+    "file": "assets/AdminAuditView-C70C2ygS.js",
     "name": "AdminAuditView",
     "src": "resources/js/views/AdminAuditView.vue",
     "isDynamicEntry": true,
@@ -60,7 +60,7 @@
     ]
   },
   "resources/js/views/AdminDashboardView.vue": {
-    "file": "assets/AdminDashboardView-B8Zn6-Nr.js",
+    "file": "assets/AdminDashboardView-DV1wIosh.js",
     "name": "AdminDashboardView",
     "src": "resources/js/views/AdminDashboardView.vue",
     "isDynamicEntry": true,
@@ -70,7 +70,7 @@
     ]
   },
   "resources/js/views/AdminUsersView.vue": {
-    "file": "assets/AdminUsersView-DDr_yK5K.js",
+    "file": "assets/AdminUsersView-DdWGSVVY.js",
     "name": "AdminUsersView",
     "src": "resources/js/views/AdminUsersView.vue",
     "isDynamicEntry": true,
@@ -80,7 +80,7 @@
     ]
   },
   "resources/js/views/ChatView.vue": {
-    "file": "assets/ChatView-Rh2segmG.js",
+    "file": "assets/ChatView-CZclTKhK.js",
     "name": "ChatView",
     "src": "resources/js/views/ChatView.vue",
     "isDynamicEntry": true,
@@ -90,7 +90,7 @@
     ]
   },
   "resources/js/views/DashboardView.vue": {
-    "file": "assets/DashboardView-BXyiVQLn.js",
+    "file": "assets/DashboardView-CunKnTgv.js",
     "name": "DashboardView",
     "src": "resources/js/views/DashboardView.vue",
     "isDynamicEntry": true,
@@ -109,7 +109,7 @@
     ]
   },
   "resources/js/views/LoginView.vue": {
-    "file": "assets/LoginView-By9soqDa.js",
+    "file": "assets/LoginView-2-aD7H5k.js",
     "name": "LoginView",
     "src": "resources/js/views/LoginView.vue",
     "isDynamicEntry": true,
@@ -119,7 +119,7 @@
     ]
   },
   "resources/js/views/ProjectsView.vue": {
-    "file": "assets/ProjectsView-PiVDZQUU.js",
+    "file": "assets/ProjectsView-BjISTLSn.js",
     "name": "ProjectsView",
     "src": "resources/js/views/ProjectsView.vue",
     "isDynamicEntry": true,
@@ -129,7 +129,7 @@
     ]
   },
   "resources/js/views/RegisterView.vue": {
-    "file": "assets/RegisterView-D2RTItPc.js",
+    "file": "assets/RegisterView-CbEHucN6.js",
     "name": "RegisterView",
     "src": "resources/js/views/RegisterView.vue",
     "isDynamicEntry": true,
@@ -139,7 +139,7 @@
     ]
   },
   "resources/js/views/SettingsView.vue": {
-    "file": "assets/SettingsView-CXsUzOxC.js",
+    "file": "assets/SettingsView-DSBlK5xs.js",
     "name": "SettingsView",
     "src": "resources/js/views/SettingsView.vue",
     "isDynamicEntry": true,
@@ -149,7 +149,7 @@
     ]
   },
   "resources/js/views/UsageView.vue": {
-    "file": "assets/UsageView-I0Bgqtse.js",
+    "file": "assets/UsageView-BTqbd-Yx.js",
     "name": "UsageView",
     "src": "resources/js/views/UsageView.vue",
     "isDynamicEntry": true,
@@ -159,7 +159,7 @@
     ]
   },
   "resources/js/views/WorkspaceView.vue": {
-    "file": "assets/WorkspaceView-B_0fiN4P.js",
+    "file": "assets/WorkspaceView-DWAg_7ne.js",
     "name": "WorkspaceView",
     "src": "resources/js/views/WorkspaceView.vue",
     "isDynamicEntry": true,

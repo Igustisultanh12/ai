@@ -152,7 +152,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue';
-import { api } from '@/api/client';
+import { api, getCsrfToken } from '@/api/client';
 import { useToast } from '@/composables/useToast';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -208,20 +208,27 @@ const fetchConversations = async () => {
     }
 };
 
-const startNewConversation = async () => {
+const startNewConversation = async (): Promise<string | null> => {
     try {
         const res = await api.post('/api/conversations', {
+            title: 'Percakapan Baru',
             model: selectedModel.value,
         });
-        conversations.value.unshift(res.conversation);
-        selectConversation(res.conversation.id);
-        isMobileListOpen.value = false;
+        if (res.conversation?.id) {
+            conversations.value.unshift(res.conversation);
+            await selectConversation(res.conversation.id);
+            isMobileListOpen.value = false;
+            return res.conversation.id;
+        }
+        return null;
     } catch (e: any) {
         toast.error('Gagal membuat percakapan: ' + e.message);
+        return null;
     }
 };
 
 const selectConversation = async (id: string) => {
+    if (!id) return;
     activeConvId.value = id;
     isMobileListOpen.value = false;
     try {
@@ -242,7 +249,7 @@ const deleteConversation = async (id: string) => {
         if (activeConvId.value === id) {
             activeConvId.value = conversations.value[0]?.id || '';
             if (activeConvId.value) {
-                selectConversation(activeConvId.value);
+                await selectConversation(activeConvId.value);
             } else {
                 messages.value = [];
                 activeConv.value = null;
@@ -258,9 +265,14 @@ const sendMessage = async () => {
     if (!inputContent.value.trim() || isStreaming.value) return;
 
     if (!activeConvId.value) {
-        await startNewConversation();
+        const newId = await startNewConversation();
+        if (!newId || !activeConvId.value) {
+            toast.error('Gagal membuat percakapan aktif. Silakan coba lagi.');
+            return;
+        }
     }
 
+    const convId = activeConvId.value;
     const userText = inputContent.value.trim();
     inputContent.value = '';
 
@@ -275,13 +287,15 @@ const sendMessage = async () => {
     streamingText.value = '';
 
     try {
+        const csrfToken = getCsrfToken();
         // SSE request with HttpOnly session cookies
-        const response = await fetch(`/api/conversations/${activeConvId.value}/stream`, {
+        const response = await fetch(`/api/conversations/${convId}/stream`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'Accept': 'text/event-stream, application/json',
                 'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+                'X-CSRF-TOKEN': csrfToken,
             },
             body: JSON.stringify({
                 content: userText,
