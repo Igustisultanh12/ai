@@ -27,7 +27,7 @@ return new class extends Migration
         Schema::create('project_files', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('project_id')->constrained('projects')->cascadeOnDelete();
-            $table->string('path', 1000);
+            $table->string('path', 255);
             $table->longText('content')->nullable();
             $table->unsignedInteger('size_bytes')->default(0);
             $table->boolean('is_binary')->default(false);
