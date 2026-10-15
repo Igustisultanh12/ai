@@ -1,119 +1,107 @@
 <template>
-  <header class="h-16 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
-    <div class="flex items-center gap-4">
+  <header class="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-surface/75 px-4 backdrop-blur-xl sm:px-6">
+    <div class="flex min-w-0 items-center gap-3">
       <button
+        type="button"
+        class="btn-ghost grid h-10 w-10 place-items-center rounded-xl md:hidden"
+        aria-label="Buka menu"
         @click="$emit('toggleSidebar')"
-        class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800/60 transition-colors"
-        aria-label="Menu"
       >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
+        <Icon name="menu" class="h-5 w-5" />
       </button>
-
-      <router-link to="/dashboard" class="flex items-center gap-2">
-        <span class="text-2xl font-black tracking-wider bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
-          XZY
-        </span>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 font-medium hidden sm:inline-block">
-          Vibecoding
-        </span>
-      </router-link>
+      <div class="hidden min-w-0 sm:block">
+        <p class="truncate font-display text-lg font-bold text-ink">{{ greeting }}, {{ firstName }}</p>
+        <p class="truncate text-xs text-muted">{{ todayLabel }}</p>
+      </div>
     </div>
 
-    <div class="flex items-center gap-3">
-      <!-- Quota Meter Widget -->
-      <div v-if="quotaSummary" class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
-        <span class="text-slate-400">Kuota Harian:</span>
-        <span class="font-semibold text-cyan-400 tabular-nums" :title="'Diperbarui ' + lastUpdatedLabel">{{ formatNumber(displayRemaining) }}</span>
-        <span class="text-slate-500">/ {{ formatNumber(quotaSummary.daily_quota) }}</span>
-        <div class="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden ml-1">
-          <div
-            class="h-full rounded-full transition-all duration-500"
-            :class="quotaSummary.daily_percent > 85 ? 'bg-rose-500' : 'bg-cyan-400'"
-            :style="{ width: `${quotaSummary.daily_percent}%` }"
-          ></div>
-        </div>
-      </div>
-
-      <!-- Admin Panel Shortcut -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Daily quota meter -->
       <router-link
-        v-if="isAdmin"
-        to="/admin"
-        class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600/20 border border-violet-500/30 text-violet-300 hover:bg-violet-600/30 transition-colors"
+        v-if="quotaSummary"
+        to="/usage"
+        class="group hidden items-center gap-3 rounded-2xl border-2 border-line bg-card px-3.5 py-1.5 transition-colors hover:border-violet-400 md:flex"
+        :title="'Diperbarui ' + lastUpdatedLabel"
       >
-        <span>🛡️</span>
-        <span>Admin Panel</span>
+        <Icon name="coins" class="h-4 w-4 text-violet-600 transition-transform duration-500 group-hover:rotate-12 dark:text-violet-300" />
+        <span class="text-xs leading-tight">
+          <span class="block font-semibold text-muted">Kuota harian</span>
+          <span class="block font-display text-sm font-bold text-ink tabular-nums">{{ formatNumber(displayRemaining) }}</span>
+        </span>
+        <span class="h-1.5 w-16 overflow-hidden rounded-full bg-surface-2">
+          <span
+            class="block h-full rounded-full transition-all duration-700"
+            :class="quotaSummary.daily_percent > 85 ? 'bg-rose-500' : 'bg-brand-gradient'"
+            :style="{ width: `${Math.max(2, 100 - quotaSummary.daily_percent)}%` }"
+          ></span>
+        </span>
       </router-link>
 
-      <!-- User Dropdown Menu -->
-      <div class="relative" ref="dropdownRef">
+      <!-- Theme toggle -->
+      <button
+        type="button"
+        class="grid h-10 w-10 place-items-center rounded-xl border-2 border-line bg-card text-ink transition-all hover:-translate-y-0.5 hover:border-violet-400"
+        :title="theme === 'dark' ? 'Ganti ke tema terang' : 'Ganti ke tema gelap'"
+        @click="toggleTheme"
+      >
+        <transition name="page" mode="out-in">
+          <Icon v-if="theme === 'dark'" key="sun" name="sun" class="h-5 w-5 text-amber-400" />
+          <Icon v-else key="moon" name="moon" class="h-5 w-5 text-violet-600" />
+        </transition>
+      </button>
+
+      <router-link v-if="isAdmin" to="/admin" class="btn btn-sm btn-brutal hidden sm:inline-flex">
+        <Icon name="shield-check" class="h-4 w-4" />
+        Admin
+      </router-link>
+
+      <!-- Account menu -->
+      <div ref="dropdownRef" class="relative">
         <button
+          type="button"
+          class="flex items-center gap-2 rounded-2xl border-2 border-transparent p-1 pr-2 transition-colors hover:border-line hover:bg-card"
+          :aria-expanded="isDropdownOpen"
           @click="isDropdownOpen = !isDropdownOpen"
-          class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-800 transition-colors"
         >
-          <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-violet-600 to-cyan-500 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+          <span class="grid h-9 w-9 place-items-center rounded-xl border-2 border-ink bg-brand-gradient font-display text-sm font-bold text-white">
             {{ userInitials }}
-          </div>
-          <span class="text-sm font-medium text-slate-200 hidden lg:inline-block max-w-[120px] truncate">
-            {{ user?.name }}
           </span>
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
+          <span class="hidden max-w-[120px] truncate text-sm font-semibold text-ink lg:inline">{{ user?.name }}</span>
+          <Icon name="chevron-down" class="h-4 w-4 text-muted transition-transform duration-200" :class="isDropdownOpen ? 'rotate-180' : ''" />
         </button>
 
-        <div
-          v-if="isDropdownOpen"
-          class="absolute right-0 mt-2 w-56 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl py-2 z-50 text-sm animate-in fade-in slide-in-from-top-2 duration-150"
-        >
-          <div class="px-4 py-2 border-b border-slate-800/80">
-            <p class="font-semibold text-white truncate">{{ user?.name }}</p>
-            <p class="text-xs text-slate-400 truncate">{{ user?.email }}</p>
-            <span class="inline-block mt-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-800 text-slate-300">
-              Role: {{ user?.role === 'admin' ? 'Administrator' : 'Pengguna' }}
-            </span>
-          </div>
-
-          <router-link
-            to="/settings"
-            @click="isDropdownOpen = false"
-            class="flex items-center gap-2 px-4 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+        <transition name="page">
+          <div
+            v-if="isDropdownOpen"
+            class="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-3xl border-2 border-ink bg-card text-sm shadow-brutal"
           >
-            <span>⚙️</span>
-            <span>Pengaturan Akun & GitHub</span>
-          </router-link>
-
-          <router-link
-            to="/usage"
-            @click="isDropdownOpen = false"
-            class="flex items-center gap-2 px-4 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-          >
-            <span>📊</span>
-            <span>Penggunaan Token</span>
-          </router-link>
-
-          <div v-if="isAdmin" class="border-t border-slate-800/80 my-1">
-            <router-link
-              to="/admin"
-              @click="isDropdownOpen = false"
-              class="flex items-center gap-2 px-4 py-2 text-violet-300 hover:bg-violet-950/40 transition-colors"
-            >
-              <span>🛡️</span>
-              <span>Dasbor Administrator</span>
-            </router-link>
+            <div class="border-b border-line px-4 py-3">
+              <p class="truncate font-semibold text-ink">{{ user?.name }}</p>
+              <p class="truncate text-xs text-muted">{{ user?.email }}</p>
+              <span class="chip mt-2">{{ user?.role === 'admin' ? 'Administrator' : 'Pengguna' }}</span>
+            </div>
+            <div class="p-2">
+              <router-link
+                v-for="item in menuItems"
+                :key="item.to"
+                :to="item.to"
+                class="group flex items-center gap-3 rounded-2xl px-3 py-2 text-ink/80 transition-colors hover:bg-surface-2 hover:text-ink"
+                @click="isDropdownOpen = false"
+              >
+                <Icon :name="item.icon" class="h-4 w-4 text-muted transition-transform group-hover:scale-110" />
+                {{ item.label }}
+              </router-link>
+              <button
+                type="button"
+                class="group flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-rose-600 transition-colors hover:bg-rose-500/10 dark:text-rose-400"
+                @click="handleLogout"
+              >
+                <Icon name="log-out" class="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                Keluar
+              </button>
+            </div>
           </div>
-
-          <div class="border-t border-slate-800/80 my-1">
-            <button
-              @click="handleLogout"
-              class="w-full flex items-center gap-2 px-4 py-2 text-rose-400 hover:bg-rose-950/30 transition-colors text-left"
-            >
-              <span>🚪</span>
-              <span>Keluar (Logout)</span>
-            </button>
-          </div>
-        </div>
+        </transition>
       </div>
     </div>
   </header>
@@ -124,11 +112,40 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useAuth } from '@/stores/auth';
 import { api } from '@/api/client';
 import { USAGE_CHANGED_EVENT } from '@/composables/useUsage';
+import { useTheme } from '@/composables/useTheme';
 
 defineEmits(['toggleSidebar']);
 
 const { user, isAdmin, logout } = useAuth();
 const isDropdownOpen = ref(false);
+const dropdownRef = ref<HTMLElement | null>(null);
+const { theme, toggleTheme } = useTheme();
+
+const menuItems = computed(() => [
+    { to: '/settings', icon: 'settings', label: 'Pengaturan akun & GitHub' },
+    { to: '/usage', icon: 'bar-chart', label: 'Penggunaan token' },
+    ...(isAdmin.value ? [{ to: '/admin', icon: 'shield-check', label: 'Dasbor administrator' }] : []),
+]);
+
+const firstName = computed(() => (user.value?.name || '').split(' ')[0]);
+const greeting = computed(() => {
+    const h = new Date().getHours();
+    if (h < 11) return 'Selamat pagi';
+    if (h < 15) return 'Selamat siang';
+    if (h < 19) return 'Selamat sore';
+    return 'Selamat malam';
+});
+const todayLabel = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+// Close the account menu on outside click or Escape
+const onDocClick = (e: MouseEvent) => {
+    if (isDropdownOpen.value && dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
+        isDropdownOpen.value = false;
+    }
+};
+const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') isDropdownOpen.value = false;
+};
 const quotaSummary = ref<any>(null);
 
 const userInitials = computed(() => {
@@ -188,6 +205,8 @@ const onVisible = () => {
 };
 
 onMounted(() => {
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
     refreshQuota();
     window.addEventListener(USAGE_CHANGED_EVENT, refreshQuota);
     document.addEventListener('visibilitychange', onVisible);
@@ -197,6 +216,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('keydown', onKey);
     window.removeEventListener(USAGE_CHANGED_EVENT, refreshQuota);
     document.removeEventListener('visibilitychange', onVisible);
     if (pollTimer) clearInterval(pollTimer);

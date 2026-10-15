@@ -1,39 +1,28 @@
 <template>
-  <div class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+  <div class="pointer-events-none fixed right-4 bottom-4 z-[80] flex w-full max-w-sm flex-col gap-3 sm:right-6 sm:bottom-6">
     <transition-group
-      enter-active-class="transform ease-out duration-300 transition"
-      enter-from-class="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
-      enter-to-class="translate-y-0 opacity-100 sm:translate-x-0"
-      leave-active-class="transition ease-in duration-200"
+      enter-active-class="transition duration-300 ease-out"
+      enter-from-class="translate-y-3 scale-95 opacity-0"
+      enter-to-class="translate-y-0 scale-100 opacity-100"
+      leave-active-class="transition duration-200 ease-in"
       leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
+      leave-to-class="translate-x-6 opacity-0"
     >
       <div
         v-for="toast in toasts"
         :key="toast.id"
-        class="pointer-events-auto p-4 rounded-xl border shadow-xl flex items-start gap-3 backdrop-blur-md"
-        :class="{
-          'bg-slate-900/95 border-emerald-500/40 text-emerald-300': toast.type === 'success',
-          'bg-slate-900/95 border-rose-500/40 text-rose-300': toast.type === 'error',
-          'bg-slate-900/95 border-amber-500/40 text-amber-300': toast.type === 'warning',
-          'bg-slate-900/95 border-cyan-500/40 text-cyan-300': toast.type === 'info',
-        }"
+        role="status"
+        class="pointer-events-auto flex items-start gap-3 rounded-2xl border-2 border-ink bg-card p-4 shadow-brutal"
       >
-        <div class="shrink-0 mt-0.5">
-          <span v-if="toast.type === 'success'" class="text-emerald-400">✓</span>
-          <span v-else-if="toast.type === 'error'" class="text-rose-400">✕</span>
-          <span v-else-if="toast.type === 'warning'" class="text-amber-400">⚠</span>
-          <span v-else class="text-cyan-400">ℹ</span>
+        <span class="grid h-8 w-8 shrink-0 place-items-center rounded-xl border-2 border-ink" :class="STYLES[toast.type].tile">
+          <Icon :name="STYLES[toast.type].icon" class="h-4 w-4" />
+        </span>
+        <div class="min-w-0 flex-1 text-sm">
+          <p v-if="toast.title" class="font-display font-bold text-ink">{{ toast.title }}</p>
+          <p class="leading-relaxed break-words text-ink/80">{{ toast.message }}</p>
         </div>
-        <div class="flex-1 text-sm">
-          <h4 v-if="toast.title" class="font-semibold text-white mb-0.5">{{ toast.title }}</h4>
-          <p class="text-slate-300 leading-relaxed">{{ toast.message }}</p>
-        </div>
-        <button
-          @click="remove(toast.id)"
-          class="shrink-0 text-slate-400 hover:text-white transition-colors text-xs"
-        >
-          ✕
+        <button type="button" class="btn-ghost grid h-7 w-7 shrink-0 place-items-center rounded-lg" title="Tutup" @click="remove(toast.id)">
+          <Icon name="x" class="h-4 w-4" />
         </button>
       </div>
     </transition-group>
@@ -44,4 +33,11 @@
 import { useToast } from '@/composables/useToast';
 
 const { toasts, remove } = useToast();
+
+const STYLES: Record<string, { icon: string; tile: string }> = {
+    success: { icon: 'check', tile: 'bg-lime-300 text-zinc-900' },
+    error: { icon: 'x', tile: 'bg-rose-500 text-white' },
+    warning: { icon: 'alert-triangle', tile: 'bg-yellow-300 text-zinc-900' },
+    info: { icon: 'info', tile: 'bg-violet-500 text-white' },
+};
 </script>

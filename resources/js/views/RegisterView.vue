@@ -1,92 +1,67 @@
 <template>
-  <div class="relative min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 overflow-hidden selection:bg-violet-500 selection:text-white">
-    <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
-    <div class="absolute inset-0 grid-bg pointer-events-none" aria-hidden="true"></div>
-
-    <div class="relative z-10 max-w-md w-full space-y-6">
-      <div v-reveal class="text-center space-y-2">
-        <router-link to="/" class="inline-flex items-center gap-2 group">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 via-fuchsia-500 to-cyan-400 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-violet-500/25 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
-            X
-          </div>
-          <span class="text-3xl font-black tracking-tight text-white">XZY</span>
-        </router-link>
-        <p class="text-sm text-slate-400">Bikin akun gratis, lalu mulai ngoding bareng AI.</p>
+  <AuthShell eyebrow="Daftar" title="Bikin akun gratis" subtitle="Satu menit saja, lalu langsung ngoding bareng AI.">
+    <form class="space-y-5" @submit.prevent="handleRegister">
+      <div v-if="errorMessage" class="flex items-start gap-2 rounded-2xl border-2 border-rose-400 bg-rose-500/10 p-3 text-sm text-rose-600 dark:text-rose-300">
+        <Icon name="alert-triangle" class="mt-0.5 h-4 w-4" />
+        <span>{{ errorMessage }}</span>
       </div>
 
-      <div v-reveal:zoom="100" class="glow-border bg-slate-900/80 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-violet-950/50 backdrop-blur-xl">
-        <form @submit.prevent="handleRegister" class="space-y-4">
-          <div v-if="errorMessage" class="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs">
-            {{ errorMessage }}
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Nama Lengkap</label>
-            <input
-              v-model="form.name"
-              type="text"
-              required
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 text-sm outline-none transition-colors"
-              placeholder="Arul Juli"
-            />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Alamat Email</label>
-            <input
-              v-model="form.email"
-              type="email"
-              required
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 text-sm outline-none transition-colors"
-              placeholder="nama@domain.com"
-            />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
-            <input
-              v-model="form.password"
-              type="password"
-              required
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 text-sm outline-none transition-colors"
-              placeholder="Minimal 8 karakter"
-            />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Konfirmasi Password</label>
-            <input
-              v-model="form.password_confirmation"
-              type="password"
-              required
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 text-sm outline-none transition-colors"
-              placeholder="Ulangi password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            :disabled="isLoading"
-            class="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-semibold text-sm shadow-lg shadow-violet-600/25 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
-          >
-            <span v-if="isLoading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            <span>{{ isLoading ? 'Mendaftarkan Akun...' : 'Daftar Akun Baru' }}</span>
-          </button>
-        </form>
+      <div>
+        <label class="label" for="reg-name">Nama lengkap</label>
+        <input id="reg-name" v-model="form.name" type="text" required autocomplete="name" class="input" placeholder="Nama kamu" />
       </div>
 
-      <div class="text-center text-xs text-slate-400">
-        Sudah memiliki akun?
-        <router-link to="/login" class="text-cyan-400 hover:underline font-semibold ml-1">
-          Masuk di sini
-        </router-link>
+      <div>
+        <label class="label" for="reg-email">Email</label>
+        <input id="reg-email" v-model="form.email" type="email" required autocomplete="email" class="input" placeholder="nama@domain.com" />
       </div>
-    </div>
-  </div>
+
+      <div class="grid gap-5 sm:grid-cols-2">
+        <div>
+          <label class="label" for="reg-password">Password</label>
+          <input id="reg-password" v-model="form.password" type="password" required autocomplete="new-password" class="input" placeholder="Minimal 8 karakter" />
+        </div>
+        <div>
+          <label class="label" for="reg-password2">Ulangi password</label>
+          <input
+            id="reg-password2"
+            v-model="form.password_confirmation"
+            type="password"
+            required
+            autocomplete="new-password"
+            class="input"
+            :class="passwordMismatch ? 'border-rose-400 focus:border-rose-500' : ''"
+            placeholder="Ketik ulang"
+          />
+        </div>
+      </div>
+
+      <div class="space-y-1.5">
+        <div class="flex gap-1.5">
+          <span v-for="n in 4" :key="n" class="h-1.5 flex-1 rounded-full transition-colors duration-300" :class="n <= passwordStrength ? strengthColor : 'bg-surface-2'"></span>
+        </div>
+        <p class="text-xs text-muted">
+          {{ passwordMismatch ? 'Password belum sama.' : strengthLabel }}
+        </p>
+      </div>
+
+      <button v-magnetic type="submit" :disabled="isLoading || passwordMismatch" class="btn btn-primary btn-lg shine w-full">
+        <Icon v-if="isLoading" name="loader" class="h-5 w-5 animate-spin" />
+        <Icon v-else name="sparkles" class="h-5 w-5" />
+        {{ isLoading ? 'Mendaftarkan akun...' : 'Buat Akun' }}
+      </button>
+    </form>
+
+    <template #footer>
+      Sudah punya akun?
+      <router-link to="/login" class="font-bold text-violet-600 underline decoration-2 underline-offset-4 hover:text-fuchsia-600 dark:text-violet-300">Masuk di sini</router-link>
+    </template>
+  </AuthShell>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { reactive, ref, computed } from 'vue';
+import AuthShell from '@/components/AuthShell.vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import { useAuth } from '@/stores/auth';
@@ -104,6 +79,23 @@ const form = reactive({
 });
 
 const isLoading = ref(false);
+
+const passwordMismatch = computed(() => form.password_confirmation.length > 0 && form.password !== form.password_confirmation);
+
+// Simple strength hint (length + character variety)
+const passwordStrength = computed(() => {
+    const p = form.password;
+    if (!p) return 0;
+    let score = p.length >= 8 ? 1 : 0;
+    if (/[A-Z]/.test(p) && /[a-z]/.test(p)) score++;
+    if (/\d/.test(p)) score++;
+    if (/[^A-Za-z0-9]/.test(p) || p.length >= 14) score++;
+    return Math.max(1, score);
+});
+const strengthLabel = computed(() =>
+    ['Gunakan minimal 8 karakter.', 'Password lemah.', 'Lumayan, tambahkan angka atau simbol.', 'Password kuat.', 'Password sangat kuat.'][form.password ? passwordStrength.value : 0]
+);
+const strengthColor = computed(() => ['bg-rose-500', 'bg-rose-500', 'bg-yellow-400', 'bg-lime-400', 'bg-emerald-500'][passwordStrength.value]);
 const errorMessage = ref('');
 
 const handleRegister = async () => {

@@ -2,30 +2,30 @@
   <div class="space-y-6 animate-in fade-in duration-200">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-black text-white">Manajemen Pengguna</h1>
-        <p class="text-xs text-slate-400">Atur hak akses peran (role), status akun, dan kuota token pengguna</p>
+        <h1 class="page-title">Manajemen Pengguna</h1>
+        <p class="page-subtitle">Atur hak akses peran (role), status akun, dan kuota token pengguna</p>
       </div>
 
-      <button @click="fetchUsers" class="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 hover:text-white">
-        ↻ Refresh Pengguna
+      <button @click="fetchUsers" class="btn btn-secondary btn-sm">
+        <Icon name="refresh" class="h-4 w-4" /> Refresh Pengguna
       </button>
     </div>
 
     <!-- Filters -->
-    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900 border border-slate-800">
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-3xl bg-card border-2 border-line">
       <input
         v-model="search"
         @input="handleSearch"
         type="text"
         placeholder="Cari nama atau email pengguna..."
-        class="w-full sm:w-80 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white outline-none focus:border-cyan-400"
+        class="input sm:w-80 text-xs"
       />
 
       <div class="flex items-center gap-2 w-full sm:w-auto">
         <select
           v-model="roleFilter"
           @change="fetchUsers"
-          class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 outline-none"
+          class="px-3 py-2 rounded-xl bg-surface border border-line text-xs text-ink/80 outline-none"
         >
           <option value="">Semua Peran</option>
           <option value="admin">Administrator</option>
@@ -34,7 +34,7 @@
         <select
           v-model="statusFilter"
           @change="fetchUsers"
-          class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 outline-none"
+          class="px-3 py-2 rounded-xl bg-surface border border-line text-xs text-ink/80 outline-none"
         >
           <option value="">Semua Status</option>
           <option value="active">Aktif</option>
@@ -44,10 +44,10 @@
     </div>
 
     <!-- Users Table -->
-    <div class="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden shadow-xl">
+    <div class="rounded-3xl border-2 border-ink bg-card overflow-hidden shadow-brutal">
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs text-slate-300">
-          <thead class="bg-slate-950/60 border-b border-slate-800 text-[11px] text-slate-400 uppercase font-mono">
+        <table class="w-full text-left text-xs text-ink/80">
+          <thead class="bg-surface/60 border-b border-line text-[11px] text-muted uppercase font-mono">
             <tr>
               <th class="p-3.5">Nama & Email</th>
               <th class="p-3.5">Peran (Role)</th>
@@ -58,16 +58,16 @@
               <th class="p-3.5 text-right">Aksi</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-800/80">
-            <tr v-for="u in users" :key="u.id" class="hover:bg-slate-800/40 transition-colors">
+          <tbody class="divide-y divide-line">
+            <tr v-for="u in users" :key="u.id" class="hover:bg-surface-2/40 transition-colors">
               <td class="p-3.5">
-                <p class="font-bold text-white">{{ u.name }}</p>
-                <p class="text-[11px] text-slate-400 font-mono">{{ u.email }}</p>
+                <p class="font-bold text-ink">{{ u.name }}</p>
+                <p class="text-[11px] text-muted font-mono">{{ u.email }}</p>
               </td>
               <td class="p-3.5">
                 <span
                   class="px-2 py-0.5 rounded text-[10px] font-bold"
-                  :class="u.role === 'admin' ? 'bg-violet-600/20 text-violet-300 border border-violet-500/30' : 'bg-slate-800 text-slate-400'"
+                  :class="u.role === 'admin' ? 'bg-violet-600/20 text-violet-600 dark:text-violet-300 border border-violet-500/30' : 'bg-surface-2 text-muted'"
                 >
                   {{ u.role === 'admin' ? 'Administrator' : 'Pengguna' }}
                 </span>
@@ -75,18 +75,18 @@
               <td class="p-3.5">
                 <span
                   class="px-2 py-0.5 rounded text-[10px] font-bold"
-                  :class="u.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'"
+                  :class="u.status === 'active' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/20 text-rose-600 dark:text-rose-400'"
                 >
                   {{ u.status === 'active' ? 'Aktif' : 'Ditangguhkan' }}
                 </span>
               </td>
-              <td class="p-3.5 font-mono text-cyan-400 font-semibold">{{ formatNumber(u.daily_token_quota) }}</td>
-              <td class="p-3.5 font-mono text-violet-400 font-semibold">{{ formatNumber(u.monthly_token_quota) }}</td>
-              <td class="p-3.5 font-mono text-slate-300">{{ u.concurrency_limit }} stream</td>
+              <td class="p-3.5 font-mono text-cyan-600 dark:text-cyan-400 font-semibold">{{ formatNumber(u.daily_token_quota) }}</td>
+              <td class="p-3.5 font-mono text-violet-600 dark:text-violet-400 font-semibold">{{ formatNumber(u.monthly_token_quota) }}</td>
+              <td class="p-3.5 font-mono text-ink/80">{{ u.concurrency_limit }} stream</td>
               <td class="p-3.5 text-right">
                 <button
                   @click="openEditModal(u)"
-                  class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold text-xs"
+                  class="btn btn-secondary btn-sm"
                 >
                   Edit Kuota / Status
                 </button>
@@ -100,20 +100,20 @@
     <!-- Edit User Modal -->
     <div
       v-if="isEditModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm"
     >
-      <div class="max-w-md w-full rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4 shadow-2xl">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h3 class="font-bold text-base text-white">Edit Pengguna: {{ editingUser?.name }}</h3>
-          <button @click="isEditModalOpen = false" class="text-slate-400 hover:text-white">✕</button>
+      <div class="max-w-md w-full rounded-[2rem] bg-card border-2 border-ink p-6 space-y-4 shadow-brutal-lg">
+        <div class="flex items-center justify-between border-b border-line pb-3">
+          <h3 class="font-bold text-base text-ink">Edit Pengguna: {{ editingUser?.name }}</h3>
+          <button @click="isEditModalOpen = false" class="btn-ghost grid h-9 w-9 place-items-center rounded-xl" title="Tutup"><Icon name="x" class="h-5 w-5" /></button>
         </div>
 
         <form @submit.prevent="saveUserChanges" class="space-y-4 text-xs">
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">Peran (Role)</label>
+            <label class="label">Peran (Role)</label>
             <select
               v-model="editForm.role"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white outline-none"
+              class="input"
             >
               <option value="user">Pengguna Biasa</option>
               <option value="admin">Administrator</option>
@@ -121,10 +121,10 @@
           </div>
 
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">Status Akun</label>
+            <label class="label">Status Akun</label>
             <select
               v-model="editForm.status"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white outline-none"
+              class="input"
             >
               <option value="active">Aktif</option>
               <option value="suspended">Ditangguhkan (Suspended)</option>
@@ -132,42 +132,42 @@
           </div>
 
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">Kuota Harian (Daily Tokens)</label>
+            <label class="label">Kuota Harian (Daily Tokens)</label>
             <input
               v-model.number="editForm.daily_token_quota"
               type="number"
               min="0"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono outline-none"
+              class="input font-mono"
             />
           </div>
 
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">Kuota Bulanan (Monthly Tokens)</label>
+            <label class="label">Kuota Bulanan (Monthly Tokens)</label>
             <input
               v-model.number="editForm.monthly_token_quota"
               type="number"
               min="0"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono outline-none"
+              class="input font-mono"
             />
           </div>
 
           <div>
-            <label class="block font-semibold text-slate-300 mb-1">Batas Permintaan Simultan (Concurrency)</label>
+            <label class="label">Batas Permintaan Simultan (Concurrency)</label>
             <input
               v-model.number="editForm.concurrency_limit"
               type="number"
               min="1"
               max="20"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono outline-none"
+              class="input font-mono"
             />
           </div>
 
           <div class="flex justify-end gap-2 pt-2">
-            <button type="button" @click="isEditModalOpen = false" class="px-3 py-1.5 text-slate-400">Batal</button>
+            <button type="button" @click="isEditModalOpen = false" class="px-3 py-1.5 text-muted">Batal</button>
             <button
               type="submit"
               :disabled="isSaving"
-              class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs disabled:opacity-50"
+              class="btn btn-primary shine btn-sm disabled:opacity-50"
             >
               {{ isSaving ? 'Menyimpan...' : 'Simpan Perubahan' }}
             </button>

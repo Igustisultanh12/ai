@@ -1,148 +1,170 @@
 <template>
-  <div class="h-[calc(100vh-4rem)] flex bg-slate-950 overflow-hidden">
-    <!-- Conversations List Sidebar -->
-    <div
-      class="border-r border-slate-800 bg-slate-950 flex flex-col shrink-0 transition-all duration-150"
-      :class="isMobileListOpen ? 'fixed inset-0 z-30 w-full' : 'hidden md:flex md:w-72'"
+  <div data-no-motion class="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <!-- Conversation list -->
+    <aside
+      class="flex shrink-0 flex-col border-r-2 border-line bg-card/80 backdrop-blur-xl transition-all duration-200"
+      :class="isMobileListOpen ? 'fixed inset-x-0 top-16 bottom-0 z-30 w-full' : 'hidden md:flex md:w-72'"
     >
-      <div class="p-3 border-b border-slate-800 flex items-center justify-between">
-        <h2 class="font-bold text-sm text-white flex items-center gap-2">
-          <span>💬</span>
-          <span>Percakapan AI</span>
+      <div class="flex items-center justify-between gap-2 border-b-2 border-line p-4">
+        <h2 class="flex items-center gap-2 font-display text-base font-bold text-ink">
+          <Icon name="message-square" class="h-5 w-5 text-violet-600 dark:text-violet-300" />
+          Percakapan
         </h2>
-        <button
-          @click="startNewConversation"
-          class="p-1.5 rounded-lg bg-violet-600/30 border border-violet-500/40 text-violet-300 hover:bg-violet-600/50 text-xs font-semibold"
-          title="Percakapan Baru"
-        >
-          + Baru
-        </button>
-      </div>
-
-      <!-- Conversations list -->
-      <div class="flex-1 overflow-y-auto p-2 space-y-1">
-        <div
-          v-for="conv in conversations"
-          :key="conv.id"
-          @click="selectConversation(conv.id)"
-          class="flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors group text-xs"
-          :class="activeConvId === conv.id ? 'bg-violet-600/20 text-cyan-300 font-semibold' : 'text-slate-400 hover:bg-slate-900 hover:text-white'"
-        >
-          <div class="truncate flex-1 mr-2">
-            <p class="truncate">{{ conv.title }}</p>
-            <span class="text-[10px] text-slate-500 font-normal">{{ formatDate(conv.updated_at) }}</span>
-          </div>
-          <button
-            @click.stop="deleteConversation(conv.id)"
-            class="opacity-0 group-hover:opacity-100 hover:text-rose-400 text-slate-500 p-1 text-[11px]"
-            title="Hapus"
-          >
-            ✕
+        <div class="flex items-center gap-1.5">
+          <button type="button" class="btn btn-brutal btn-sm" title="Percakapan baru" @click="startNewConversation">
+            <Icon name="plus" class="h-4 w-4" />
+            Baru
+          </button>
+          <button type="button" class="btn-ghost grid h-8 w-8 place-items-center rounded-lg md:hidden" title="Tutup" @click="isMobileListOpen = false">
+            <Icon name="x" class="h-4 w-4" />
           </button>
         </div>
       </div>
-    </div>
 
-    <!-- Active Chat Messages Area -->
-    <div class="flex-1 flex flex-col overflow-hidden bg-slate-950">
-      <!-- Chat Header -->
-      <div class="h-12 px-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
-        <div class="flex items-center gap-3">
-          <button @click="isMobileListOpen = !isMobileListOpen" class="md:hidden text-slate-400 hover:text-white">
-            ☰ Daftar
-          </button>
-          <span class="font-semibold text-white truncate max-w-[8rem] sm:max-w-xs">{{ activeConv?.title || 'Percakapan Baru' }}</span>
-          <select
-            v-model="selectedProjectId"
-            @change="onProjectChange"
-            :disabled="isStreaming"
-            title="Proyek yang terhubung: perintah 'push ke <link GitHub>' akan mem-push seluruh berkas proyek ini"
-            class="max-w-[8rem] sm:max-w-[12rem] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 text-xs outline-none"
+      <div class="flex-1 space-y-1 overflow-y-auto p-2">
+        <p v-if="conversations.length === 0" class="px-3 py-8 text-center text-sm text-muted">Belum ada percakapan.</p>
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          class="group flex cursor-pointer items-center justify-between gap-2 rounded-xl border-2 p-2.5 text-sm transition-all"
+          :class="activeConvId === conv.id
+            ? 'border-ink bg-yellow-300 font-semibold text-zinc-900 shadow-brutal-sm'
+            : 'border-transparent text-muted hover:translate-x-1 hover:bg-surface-2 hover:text-ink'"
+          @click="selectConversation(conv.id)"
+        >
+          <div class="min-w-0 flex-1">
+            <p class="truncate">{{ conv.title }}</p>
+            <span class="text-[11px] font-normal opacity-70">{{ formatDate(conv.updated_at) }}</span>
+          </div>
+          <button
+            type="button"
+            class="grid h-7 w-7 shrink-0 place-items-center rounded-lg opacity-0 transition-opacity group-hover:opacity-100 hover:bg-rose-500 hover:text-white"
+            title="Hapus"
+            @click.stop="deleteConversation(conv.id)"
           >
-            <option value="">Tanpa proyek</option>
-            <option v-for="p in projects" :key="p.id" :value="p.id">📁 {{ p.name }}</option>
-          </select>
+            <Icon name="trash" class="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Chat area -->
+    <section class="flex flex-1 flex-col overflow-hidden">
+      <!-- Header -->
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b-2 border-line bg-card/80 px-3 py-2 text-xs backdrop-blur-xl sm:px-4">
+        <div class="flex min-w-0 items-center gap-2">
+          <button type="button" class="btn btn-secondary btn-sm md:hidden" @click="isMobileListOpen = !isMobileListOpen">
+            <Icon name="list" class="h-4 w-4" />
+            Daftar
+          </button>
+          <span class="max-w-[8rem] truncate font-display text-sm font-bold text-ink sm:max-w-xs">{{ activeConv?.title || 'Percakapan baru' }}</span>
+          <label class="relative">
+            <Icon name="folder" class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+            <select
+              v-model="selectedProjectId"
+              :disabled="isStreaming"
+              title="Proyek yang terhubung: perintah 'push ke <link GitHub>' akan mem-push seluruh berkas proyek ini"
+              class="max-w-[9rem] rounded-xl border-2 border-line bg-surface py-1.5 pr-2 pl-7 text-xs font-semibold text-ink outline-none transition-colors hover:border-violet-400 focus:border-violet-500 sm:max-w-[13rem]"
+              @change="onProjectChange"
+            >
+              <option value="">Tanpa proyek</option>
+              <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </label>
         </div>
 
         <div class="flex items-center gap-2">
           <button
             v-if="activeConvId && conversationFiles.length > 0"
-            @click="openPushModal(conversationFiles)"
+            type="button"
             :disabled="isStreaming"
-            class="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-400 text-slate-300 hover:text-white disabled:opacity-40"
+            class="btn btn-secondary btn-sm"
             :title="`Push ${conversationFiles.length} berkas terbaru dari percakapan ini`"
+            @click="openPushModal(conversationFiles)"
           >
-            <span class="hidden sm:inline">Push ke GitHub</span><span class="sm:hidden">⬆ GitHub</span>
-            <span class="ml-1 text-cyan-400">({{ conversationFiles.length }})</span>
+            <Icon name="github" class="h-4 w-4" />
+            <span class="hidden sm:inline">Push</span>
+            <span class="rounded-md bg-violet-500 px-1.5 text-[10px] font-bold text-white">{{ conversationFiles.length }}</span>
           </button>
-          <span class="text-slate-400 hidden sm:inline">Model:</span>
-          <select
-            v-model="selectedModel"
-            @change="onModelChange"
-            :disabled="isStreaming || models.length === 0"
-            :title="modelSource === 'live' ? 'Katalog live dari TokenomixAI' : 'Katalog lokal (gateway tidak terjangkau)'"
-            class="max-w-[11rem] sm:max-w-[16rem] px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-xs outline-none disabled:opacity-60"
-          >
-            <option v-if="models.length === 0" value="">Memuat model...</option>
-            <option v-for="m in models" :key="m.id" :value="m.id" :disabled="!m.available">
-              {{ modelLabel(m) }}
-            </option>
-          </select>
+          <label class="relative">
+            <Icon name="cpu" class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-violet-600 dark:text-violet-300" />
+            <select
+              v-model="selectedModel"
+              :disabled="isStreaming || models.length === 0"
+              :title="modelSource === 'live' ? 'Katalog live dari TokenomixAI' : 'Katalog lokal (gateway tidak terjangkau)'"
+              class="max-w-[11rem] rounded-xl border-2 border-ink bg-yellow-300 py-1.5 pr-2 pl-7 font-mono text-xs font-semibold text-zinc-900 shadow-brutal-sm outline-none transition-transform hover:-translate-y-0.5 disabled:opacity-60 sm:max-w-[16rem]"
+              @change="onModelChange"
+            >
+              <option v-if="models.length === 0" value="">Memuat model...</option>
+              <option v-for="m in models" :key="m.id" :value="m.id" :disabled="!m.available">
+                {{ modelLabel(m) }}
+              </option>
+            </select>
+          </label>
         </div>
       </div>
 
-      <!-- Messages Stream List -->
-      <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 select-text">
-        <div v-if="messages.length === 0" class="h-full flex flex-col items-center justify-center text-center text-slate-500 space-y-3">
-          <div class="text-4xl">🤖</div>
-          <h3 class="font-bold text-white text-base">Mulai Diskusi dengan AI XZY</h3>
-          <p class="text-xs text-slate-400 max-w-sm leading-relaxed">
-            Ajukan pertanyaan teknis, konsultasi arsitektur kode, atau diskusikan implementasi fitur aplikasi Anda.
+      <!-- Messages -->
+      <div ref="messagesContainer" class="flex-1 space-y-6 overflow-y-auto p-4 select-text sm:p-6">
+        <div v-if="messages.length === 0 && !isStreaming" class="flex h-full flex-col items-center justify-center text-center">
+          <span class="grid h-20 w-20 place-items-center rounded-3xl border-2 border-ink bg-brand-gradient text-white shadow-brutal animate-float">
+            <Icon name="bot" class="h-10 w-10" />
+          </span>
+          <h3 class="mt-6 font-display text-2xl font-bold text-ink sm:text-3xl">Mau bikin apa hari ini?</h3>
+          <p class="mt-2 max-w-md text-sm text-muted">
+            Tanya soal kode, minta agent membaca repo, menulis fitur, atau push langsung ke GitHub.
           </p>
+          <div class="mt-8 grid w-full max-w-2xl gap-3 sm:grid-cols-2">
+            <button
+              v-for="(s, i) in suggestions"
+              :key="s.text"
+              type="button"
+              class="group flex items-start gap-3 rounded-2xl border-2 border-line bg-card p-4 text-left text-sm transition-all hover:-translate-y-1 hover:border-ink hover:shadow-brutal"
+              @click="useSuggestion(s.text)"
+            >
+              <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border-2 border-zinc-950 transition-transform group-hover:rotate-6" :class="tileColors[i % tileColors.length]">
+                <Icon :name="s.icon" class="h-4 w-4" />
+              </span>
+              <span class="text-ink/80 group-hover:text-ink">{{ s.text }}</span>
+            </button>
+          </div>
         </div>
 
         <div
           v-for="msg in messages"
           :key="msg.id || msg.tempId"
-          class="flex gap-3 max-w-3xl"
+          class="flex max-w-3xl gap-3"
           :class="msg.role === 'user' ? 'ml-auto justify-end' : 'mr-auto justify-start'"
         >
-          <div
-            v-if="msg.role !== 'user'"
-            class="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 to-cyan-500 flex items-center justify-center text-xs font-bold text-white shrink-0 mt-1 shadow-md"
-          >
-            AI
+          <div v-if="msg.role !== 'user'" class="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl border-2 border-ink bg-brand-gradient text-white shadow-brutal-sm">
+            <Icon name="bot" class="h-4 w-4" />
           </div>
 
           <div
-            class="p-4 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-2xl overflow-hidden"
-            :class="msg.role === 'user' ? 'bg-violet-600 text-white rounded-br-none shadow-md' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none shadow-xl'"
+            class="max-w-2xl overflow-hidden rounded-2xl border-2 p-4 text-sm leading-relaxed"
+            :class="msg.role === 'user'
+              ? 'rounded-br-md border-ink bg-violet-600 text-white shadow-brutal-sm'
+              : 'rounded-bl-md border-line bg-card text-ink'"
           >
-            <div class="chat-md whitespace-pre-wrap font-sans" v-html="renderMarkdown(msg.content)"></div>
-            <div
-              v-if="msg.role === 'assistant' && codeFilesOf(msg).length > 0"
-              class="mt-3 pt-2 border-t border-slate-800 flex flex-wrap items-center gap-2 text-[11px]"
-            >
-              <button
-                @click="openPushModal(codeFilesOf(msg))"
-                :disabled="isStreaming"
-                class="px-2.5 py-1 rounded-lg bg-violet-600/30 border border-violet-500/40 text-violet-200 hover:bg-violet-600/50 font-semibold disabled:opacity-40"
-              >
-                ⬆ Push ke GitHub
+            <div class="chat-md font-sans whitespace-pre-wrap" v-html="renderMarkdown(msg.content)"></div>
+            <div v-if="msg.role === 'assistant' && codeFilesOf(msg).length > 0" class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[11px]">
+              <button type="button" :disabled="isStreaming" class="btn btn-brutal btn-sm" @click="openPushModal(codeFilesOf(msg))">
+                <Icon name="upload" class="h-3.5 w-3.5" />
+                Push ke GitHub
               </button>
-              <span class="text-slate-500 truncate">
+              <span class="truncate text-muted">
                 {{ codeFilesOf(msg).map(f => f.path || 'tanpa path').join(', ') }}
               </span>
             </div>
           </div>
         </div>
 
-        <!-- Real-time streaming chunk -->
-        <div v-if="isStreaming" class="flex gap-3 max-w-3xl mr-auto justify-start">
-          <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 to-cyan-500 flex items-center justify-center text-xs font-bold text-white shrink-0 mt-1 animate-pulse">
-            AI
+        <!-- Live agent activity -->
+        <div v-if="isStreaming" class="mr-auto flex max-w-3xl justify-start gap-3">
+          <div class="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl border-2 border-ink bg-brand-gradient text-white shadow-brutal-sm animate-pulse">
+            <Icon name="bot" class="h-4 w-4" />
           </div>
-          <div class="p-4 rounded-2xl bg-slate-900 border border-violet-500/30 text-slate-200 text-xs sm:text-sm leading-relaxed max-w-2xl rounded-bl-none shadow-xl">
+          <div class="glow-border max-w-2xl rounded-2xl rounded-bl-md border-2 border-violet-400/60 bg-card p-4 text-sm leading-relaxed text-ink">
             <AgentActivity
               class="mb-3"
               :status="agentStatusLabel"
@@ -150,44 +172,39 @@
               :started-at="agentStartedAt"
               :active="isStreaming"
             />
-            <div v-if="streamingText" class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(streamingText)"></div>
+            <div v-if="streamingText" class="chat-md font-sans whitespace-pre-wrap" v-html="renderMarkdown(streamingText)"></div>
           </div>
         </div>
       </div>
 
-      <!-- Chat Bottom Input Bar -->
-      <div class="p-3 sm:p-4 bg-slate-900 border-t border-slate-800 shrink-0">
-        <div class="max-w-3xl mx-auto flex items-end gap-2">
-          <div class="flex-1 relative">
-            <textarea
-              v-model="inputContent"
-              @keydown.enter.exact.prevent="sendMessage"
-              rows="2"
-              :placeholder="selectedProjectId
-                ? 'Ketik pesan... atau: push ke https://github.com/username/repo-baru (push seluruh berkas proyek)'
-                : 'Ketik pesan... (Enter kirim, Shift+Enter baris baru). Push: push ke https://github.com/username/repo'"
-              class="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-xs sm:text-sm text-white outline-none resize-none"
-            ></textarea>
-          </div>
+      <!-- Composer -->
+      <div class="shrink-0 border-t-2 border-line bg-card/80 p-3 backdrop-blur-xl sm:p-4">
+        <div class="mx-auto flex max-w-3xl items-end gap-2 rounded-[1.4rem] border-2 border-ink bg-surface p-2 shadow-brutal-sm transition-shadow focus-within:shadow-brutal">
+          <textarea
+            ref="composerRef"
+            v-model="inputContent"
+            rows="2"
+            :placeholder="selectedProjectId
+              ? 'Ketik pesan... atau: push ke https://github.com/username/repo-baru'
+              : 'Ketik pesan (Enter kirim, Shift+Enter baris baru)'"
+            class="max-h-48 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-ink outline-none placeholder:text-muted"
+            @keydown.enter.exact.prevent="sendMessage"
+          ></textarea>
 
-          <button
-            v-if="isStreaming"
-            @click="stopGeneration"
-            class="px-4 py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-lg transition-colors shrink-0"
-          >
+          <button v-if="isStreaming" type="button" class="btn btn-sm shrink-0 border-2 border-ink bg-rose-500 text-white shadow-brutal-sm hover:-translate-y-0.5" @click="stopGeneration">
+            <Icon name="stop" class="h-4 w-4" />
             Berhenti
           </button>
-          <button
-            v-else
-            @click="sendMessage"
-            :disabled="!inputContent.trim()"
-            class="px-5 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-bold text-xs shadow-lg transition-all disabled:opacity-40 disabled:pointer-events-none shrink-0"
-          >
+          <button v-else type="button" :disabled="!inputContent.trim()" class="btn btn-primary btn-sm shine shrink-0" @click="sendMessage">
+            <Icon name="send" class="h-4 w-4" />
             Kirim
           </button>
         </div>
+        <p class="mx-auto mt-2 max-w-3xl px-1 text-[11px] text-muted">
+          Tip: tulis <span class="font-mono text-ink">push ke https://github.com/user/repo</span> untuk mengirim berkas langsung.
+        </p>
       </div>
-    </div>
+    </section>
 
     <GitHubPushModal
       :open="pushModalOpen"
@@ -249,6 +266,21 @@ const inputContent = ref('');
 const isStreaming = ref(false);
 const streamingText = ref('');
 const isMobileListOpen = ref(false);
+const composerRef = ref<HTMLTextAreaElement | null>(null);
+
+const tileColors = ['bg-yellow-300 text-zinc-900', 'bg-lime-300 text-zinc-900', 'bg-violet-500 text-white', 'bg-orange-400 text-zinc-900'];
+const suggestions = [
+    { icon: 'code', text: 'Buatkan REST API CRUD produk dengan Laravel 12 lengkap dengan validasi' },
+    { icon: 'github', text: 'Lihat isi repo GitHub saya lalu jelaskan strukturnya' },
+    { icon: 'wand', text: 'Rapikan dan refactor komponen Vue ini agar lebih mudah dibaca' },
+    { icon: 'shield', text: 'Cek potensi celah keamanan di controller autentikasi saya' },
+];
+
+// Fill the composer with a starter prompt so the user can tweak it before sending
+const useSuggestion = (text: string) => {
+    inputContent.value = text;
+    nextTick(() => composerRef.value?.focus());
+};
 const messagesContainer = ref<HTMLDivElement | null>(null);
 
 const renderMarkdown = (text: string) => {

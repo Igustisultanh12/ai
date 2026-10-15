@@ -99,7 +99,8 @@ router.beforeEach(async (to, from, next) => {
     }
 
     if (to.meta.requiresAuth && !isAuthenticated.value) {
-        return next({ name: 'login' });
+        // Remember where the user was going so login can bring them back
+        return next({ name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : {} });
     }
 
     if (to.meta.guestOnly && isAuthenticated.value) {

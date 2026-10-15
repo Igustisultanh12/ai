@@ -193,7 +193,7 @@ class VibecodingAgent
 
                 if ($checkResult['success']) {
                     $verificationPassed = true;
-                    $runLog[] = "✓ Kode berhasil divalidasi tanpa error.";
+                    $runLog[] = "[OK] Kode berhasil divalidasi tanpa error.";
                     
                     // Create post-apply checkpoint
                     $this->workspace->createCheckpoint(
@@ -209,7 +209,7 @@ class VibecodingAgent
                         $this->pushToGithubSafe($project, $user, $runLog);
                     }
                 } else {
-                    $runLog[] = "✗ Verifikasi kode gagal. Memulai perbaikan otomatis...";
+                    $runLog[] = "[GAGAL] Verifikasi kode gagal. Memulai perbaikan otomatis...";
                     $messages[] = ['role' => 'assistant', 'content' => $replyContent];
                     $messages[] = [
                         'role' => 'user',
@@ -318,12 +318,12 @@ class VibecodingAgent
         try {
             $res = $this->github->pushProjectCheckpoint($project, $user, "Vibecoding auto-push: " . now()->toIso8601String());
             if ($res['success']) {
-                $runLog[] = "✓ Berhasil auto-push ke GitHub: {$res['commit_url']}";
+                $runLog[] = "[OK] Berhasil auto-push ke GitHub: {$res['commit_url']}";
             } else {
-                $runLog[] = "⚠ Auto-push GitHub dilewati: {$res['message']}";
+                $runLog[] = "[PERINGATAN] Auto-push GitHub dilewati: {$res['message']}";
             }
         } catch (Exception $e) {
-            $runLog[] = "⚠ Gagal auto-push ke GitHub: " . $e->getMessage();
+            $runLog[] = "[PERINGATAN] Gagal auto-push ke GitHub: " . $e->getMessage();
         }
     }
 

@@ -76,7 +76,7 @@ class BootstrapAdminCommand extends Command
             'role' => 'admin',
         ]);
 
-        $this->info("✓ Administrator berhasil dikonfigurasi: {$user->email} [ID: {$user->id}]");
+        $this->info("[OK] Administrator berhasil dikonfigurasi: {$user->email} [ID: {$user->id}]");
         return self::SUCCESS;
     }
 }

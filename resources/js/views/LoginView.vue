@@ -1,123 +1,113 @@
 <template>
-  <div class="relative min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 overflow-hidden selection:bg-violet-500 selection:text-white">
-    <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
-    <div class="absolute inset-0 grid-bg pointer-events-none" aria-hidden="true"></div>
-
-    <div class="relative z-10 max-w-md w-full space-y-6">
-      <!-- Brand Logo -->
-      <div v-reveal class="text-center space-y-2">
-        <router-link to="/" class="inline-flex items-center gap-2 group">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 via-fuchsia-500 to-cyan-400 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-violet-500/25 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
-            X
-          </div>
-          <span class="text-3xl font-black tracking-tight text-white">XZY</span>
-        </router-link>
-        <p class="text-sm text-slate-400">Selamat datang lagi! Masuk dan lanjutkan ngoding bareng AI.</p>
+  <AuthShell
+    eyebrow="Masuk"
+    :title="mfaStep ? 'Satu langkah lagi' : 'Selamat datang lagi'"
+    :subtitle="mfaStep ? 'Masukkan kode dari aplikasi authenticator kamu.' : 'Masuk dan lanjutkan ngoding bareng AI.'"
+  >
+    <!-- Step 1: email & password -->
+    <form v-if="!mfaStep" class="space-y-5" @submit.prevent="handleLogin">
+      <div v-if="errorMessage" class="flex items-start gap-2 rounded-2xl border-2 border-rose-400 bg-rose-500/10 p-3 text-sm text-rose-600 dark:text-rose-300">
+        <Icon name="alert-triangle" class="mt-0.5 h-4 w-4" />
+        <span>{{ errorMessage }}</span>
       </div>
 
-      <!-- Main Card -->
-      <div v-reveal:zoom="100" class="glow-border bg-slate-900/80 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-violet-950/50 backdrop-blur-xl">
-        <!-- Step 1: Standard Password Form -->
-        <form v-if="!mfaStep" @submit.prevent="handleLogin" class="space-y-4">
-          <div v-if="errorMessage" class="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs">
-            {{ errorMessage }}
-          </div>
+      <div>
+        <label class="label" for="login-email">Email</label>
+        <input id="login-email" v-model="form.email" type="email" required autocomplete="email" class="input" placeholder="nama@domain.com" />
+      </div>
 
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Alamat Email</label>
-            <input
-              v-model="form.email"
-              type="email"
-              required
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 text-sm outline-none transition-colors"
-              placeholder="nama@domain.com"
-            />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
-            <input
-              v-model="form.password"
-              type="password"
-              required
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 text-sm outline-none transition-colors"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <button
-            type="submit"
-            :disabled="isLoading"
-            class="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-semibold text-sm shadow-lg shadow-violet-600/25 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
-          >
-            <span v-if="isLoading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            <span>{{ isLoading ? 'Memverifikasi...' : 'Masuk ke XZY' }}</span>
-          </button>
-        </form>
-
-        <!-- Step 2: 2FA MFA Challenge -->
-        <form v-else @submit.prevent="handleMfaVerify" class="space-y-4">
-          <div class="text-center space-y-1 pb-2">
-            <div class="w-10 h-10 rounded-full bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 flex items-center justify-center text-lg mx-auto">
-              🔐
-            </div>
-            <h3 class="font-bold text-white text-base">Verifikasi Dua Faktor</h3>
-            <p class="text-xs text-slate-400">Masukkan 6 digit kode dari aplikasi Authenticator atau gunakan kode pemulihan.</p>
-          </div>
-
-          <div v-if="errorMessage" class="p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs">
-            {{ errorMessage }}
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Kode OTP / Recovery Code</label>
-            <input
-              v-model="mfaCode"
-              type="text"
-              required
-              autofocus
-              class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-center font-mono text-lg tracking-widest text-cyan-300 outline-none"
-              placeholder="123456"
-            />
-          </div>
-
-          <button
-            type="submit"
-            :disabled="isLoading"
-            class="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-semibold text-sm shadow-lg transition-all disabled:opacity-50"
-          >
-            {{ isLoading ? 'Memverifikasi...' : 'Konfirmasi Kode' }}
-          </button>
-
+      <div>
+        <label class="label" for="login-password">Password</label>
+        <div class="relative">
+          <input
+            id="login-password"
+            v-model="form.password"
+            :type="showPassword ? 'text' : 'password'"
+            required
+            autocomplete="current-password"
+            class="input pr-12"
+            placeholder="Password kamu"
+          />
           <button
             type="button"
-            @click="mfaStep = false"
-            class="w-full text-xs text-slate-400 hover:text-white transition-colors"
+            class="absolute top-1/2 right-2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink"
+            :title="showPassword ? 'Sembunyikan password' : 'Tampilkan password'"
+            @click="showPassword = !showPassword"
           >
-            ← Kembali ke form login
+            <Icon :name="showPassword ? 'eye' : 'lock'" class="h-4 w-4" />
           </button>
-        </form>
+        </div>
       </div>
 
-      <!-- Footer Links -->
-      <div class="text-center text-xs text-slate-400">
-        Belum memiliki akun?
-        <router-link to="/register" class="text-cyan-400 hover:underline font-semibold ml-1">
-          Daftar sekarang
-        </router-link>
+      <button v-magnetic type="submit" :disabled="isLoading" class="btn btn-primary btn-lg shine w-full">
+        <Icon v-if="isLoading" name="loader" class="h-5 w-5 animate-spin" />
+        <Icon v-else name="log-in" class="h-5 w-5" />
+        {{ isLoading ? 'Memverifikasi...' : 'Masuk ke XZY' }}
+      </button>
+    </form>
+
+    <!-- Step 2: two-factor code -->
+    <form v-else class="space-y-5" @submit.prevent="handleMfaVerify">
+      <div class="flex items-center gap-3 rounded-2xl border-2 border-ink bg-yellow-300 p-3 text-sm font-semibold text-zinc-900">
+        <Icon name="shield-check" class="h-5 w-5" />
+        Verifikasi dua faktor aktif untuk akun ini.
       </div>
-    </div>
-  </div>
+
+      <div v-if="errorMessage" class="flex items-start gap-2 rounded-2xl border-2 border-rose-400 bg-rose-500/10 p-3 text-sm text-rose-600 dark:text-rose-300">
+        <Icon name="alert-triangle" class="mt-0.5 h-4 w-4" />
+        <span>{{ errorMessage }}</span>
+      </div>
+
+      <div>
+        <label class="label" for="mfa-code">Kode OTP atau kode pemulihan</label>
+        <input
+          id="mfa-code"
+          v-model="mfaCode"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          required
+          autofocus
+          class="input text-center font-mono text-xl tracking-[0.4em]"
+          placeholder="123456"
+        />
+      </div>
+
+      <button type="submit" :disabled="isLoading" class="btn btn-primary btn-lg shine w-full">
+        <Icon v-if="isLoading" name="loader" class="h-5 w-5 animate-spin" />
+        {{ isLoading ? 'Memverifikasi...' : 'Konfirmasi Kode' }}
+      </button>
+
+      <button type="button" class="btn btn-ghost w-full" @click="mfaStep = false">
+        <Icon name="arrow-left" class="h-4 w-4" />
+        Kembali ke form login
+      </button>
+    </form>
+
+    <template #footer>
+      Belum punya akun?
+      <router-link to="/register" class="font-bold text-violet-600 underline decoration-2 underline-offset-4 hover:text-fuchsia-600 dark:text-violet-300">Daftar gratis</router-link>
+    </template>
+  </AuthShell>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
+import AuthShell from '@/components/AuthShell.vue';
 import { api } from '@/api/client';
 import { useAuth } from '@/stores/auth';
 import { useToast } from '@/composables/useToast';
 
 const router = useRouter();
+const route = useRoute();
+const showPassword = ref(false);
+
+// Back to the page that asked for a login (e.g. after the session expired)
+const redirectTarget = () => {
+    const r = route.query.redirect;
+    return typeof r === 'string' && r.startsWith('/') && !r.startsWith('//') ? r : '/dashboard';
+};
 const { checkAuth } = useAuth();
 const toast = useToast();
 
@@ -144,7 +134,7 @@ const handleLogin = async () => {
         } else {
             await checkAuth();
             toast.success('Login berhasil.');
-            router.push('/dashboard');
+            router.push(redirectTarget());
         }
     } catch (e: any) {
         errorMessage.value = e.message || 'Login gagal. Periksa kembali email dan password.';
@@ -161,7 +151,7 @@ const handleMfaVerify = async () => {
         await api.post('/api/auth/mfa/verify', { code: mfaCode.value });
         await checkAuth();
         toast.success('Verifikasi dua faktor berhasil.');
-        router.push('/dashboard');
+        router.push(redirectTarget());
     } catch (e: any) {
         errorMessage.value = e.message || 'Kode 2FA tidak valid.';
     } finally {

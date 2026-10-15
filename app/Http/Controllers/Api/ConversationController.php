@@ -40,6 +40,7 @@ class ConversationController extends Controller
 
     public const CHAT_SYSTEM_PROMPT = <<<'PROMPT'
 Kamu adalah asisten pemrograman AI XZY. Jawab dalam bahasa yang dipakai pengguna.
+Gaya jawaban: rapi dengan markdown, tanpa emoji atau emotikon.
 Jika kamu menulis isi sebuah berkas kode, beri label path relatif berkas tersebut pada pembuka blok kode dengan format ```bahasa:path/ke/berkas.ext (contoh: ```php:app/Http/Controllers/UserController.php), dan tulis isi berkas secara lengkap, bukan potongan, agar pengguna bisa langsung push ke GitHub dari chat.
 Untuk potongan kode contoh yang bukan berkas utuh, gunakan blok kode biasa tanpa path.
 
@@ -507,8 +508,8 @@ PROMPT;
                             'project_id' => $toolResult['project_id'] ?? null,
                         ]);
 
-                        $activity[] = ($ok ? '✅ ' : '❌ ') . $label
-                            . ($link ? " → [" . (isset($toolResult['commit_sha']) ? 'commit ' . substr($toolResult['commit_sha'], 0, 7) : 'buka') . "]({$link})" : '')
+                        $activity[] = ($ok ? '**[OK]** ' : '**[GAGAL]** ') . $label
+                            . ($link ? " — [" . (isset($toolResult['commit_sha']) ? 'commit ' . substr($toolResult['commit_sha'], 0, 7) : 'buka') . "]({$link})" : '')
                             . ($ok ? '' : ': ' . mb_substr((string) $toolResult['error'], 0, 300));
 
                         $messages[] = [
@@ -645,7 +646,7 @@ PROMPT;
                 $what = count($result['files']) . ' berkas dari chat ini';
             }
         } catch (Exception $e) {
-            return "❌ **Push ke GitHub gagal** ({$command['repo']})\n\n" . $e->getMessage();
+            return "**[GAGAL] Push ke GitHub gagal** ({$command['repo']})\n\n" . $e->getMessage();
         }
 
         $fileList = implode("\n", array_map(fn ($f) => "- `{$f}`", array_slice($result['files'], 0, 30)));
@@ -653,7 +654,7 @@ PROMPT;
             $fileList .= "\n- … dan " . (count($result['files']) - 30) . ' berkas lain';
         }
 
-        return "✅ **Berhasil push {$what}** ke [{$result['repo']}]({$result['repo_url']}) branch `{$result['branch']}`"
+        return "**[OK] Berhasil push {$what}** ke [{$result['repo']}]({$result['repo_url']}) branch `{$result['branch']}`"
             . ($result['branch_created'] ? ' (branch baru)' : '') . ".\n\n"
             . "Commit: [{$result['commit_sha']}]({$result['commit_url']})\n\n{$fileList}";
     }
@@ -706,7 +707,7 @@ PROMPT;
     protected function activityBlock(array $activity): string
     {
         return empty($activity) ? '' :
-            "<details><summary>🔧 Aksi GitHub & proyek (" . count($activity) . ")</summary>\n\n- "
+            "<details><summary>Aksi GitHub & proyek (" . count($activity) . ")</summary>\n\n- "
             . implode("\n- ", $activity) . "\n\n</details>\n\n";
     }
 

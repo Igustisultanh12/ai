@@ -1,168 +1,139 @@
 <template>
-  <div class="space-y-6 animate-in fade-in duration-200">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <h1 class="text-2xl font-black text-white">Daftar Proyek</h1>
-        <p class="text-xs text-slate-400">Kelola workspace vibecoding dan source code aplikasi Anda</p>
+  <div class="mx-auto max-w-7xl space-y-8">
+    <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div v-reveal>
+        <span class="eyebrow">Workspace</span>
+        <h1 class="page-title mt-3">Daftar proyek</h1>
+        <p class="page-subtitle">Kelola workspace vibecoding dan source code aplikasimu.</p>
       </div>
+      <button type="button" class="btn btn-primary shine" @click="isCreateModalOpen = true">
+        <Icon name="plus" class="h-4 w-4" />
+        Proyek baru
+      </button>
+    </header>
 
-      <button
-        @click="isCreateModalOpen = true"
-        class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-semibold text-xs shadow-lg transition-all flex items-center justify-center gap-2"
-      >
-        <span>+</span>
-        <span>Buat Proyek Baru</span>
+    <!-- Filters & search -->
+    <div class="card-brutal flex flex-col items-stretch gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <label class="relative block w-full sm:w-96">
+        <Icon name="search" class="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input v-model="searchQuery" type="text" placeholder="Cari nama atau deskripsi proyek..." class="input pl-10" @input="handleSearch" />
+      </label>
+
+      <div class="flex gap-1 rounded-2xl border-2 border-line bg-surface-2 p-1">
+        <button
+          v-for="opt in statusOptions"
+          :key="opt.value"
+          type="button"
+          class="rounded-xl px-3.5 py-1.5 text-sm font-bold transition-all"
+          :class="statusFilter === opt.value ? 'border-2 border-ink bg-yellow-300 text-zinc-900 shadow-brutal-sm' : 'border-2 border-transparent text-muted hover:text-ink'"
+          @click="setStatus(opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Grid -->
+    <div v-if="isLoading" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-for="i in 6" :key="i" class="h-52 animate-pulse rounded-3xl border-2 border-line bg-card"></div>
+    </div>
+
+    <div v-else-if="projects.length === 0" class="rounded-[2rem] border-2 border-dashed border-line bg-card/60 p-14 text-center">
+      <span class="mx-auto grid h-16 w-16 place-items-center rounded-2xl border-2 border-ink bg-lime-300 text-zinc-900 shadow-brutal-sm animate-bounce-soft">
+        <Icon :name="searchQuery || statusFilter ? 'search' : 'folder-plus'" class="h-8 w-8" />
+      </span>
+      <h3 class="mt-5 font-display text-xl font-bold text-ink">{{ searchQuery || statusFilter ? 'Tidak ada proyek yang cocok' : 'Belum ada proyek' }}</h3>
+      <p class="mx-auto mt-2 max-w-sm text-sm text-muted">Coba ubah kata kunci atau filter, atau buat proyek baru.</p>
+      <button type="button" class="btn btn-brutal mt-6" @click="isCreateModalOpen = true">
+        <Icon name="plus" class="h-4 w-4" />
+        Buat proyek
       </button>
     </div>
 
-    <!-- Filters & Search -->
-    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900 border border-slate-800">
-      <div class="relative w-full sm:w-80">
-        <input
-          v-model="searchQuery"
-          @input="handleSearch"
-          type="text"
-          placeholder="Cari nama proyek..."
-          class="w-full pl-9 pr-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-xs text-white outline-none"
-        />
-        <span class="absolute left-3 top-2.5 text-slate-500 text-xs">🔍</span>
-      </div>
-
-      <div class="flex items-center gap-2 w-full sm:w-auto">
-        <select
-          v-model="statusFilter"
-          @change="fetchProjects"
-          class="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 outline-none"
-        >
-          <option value="">Semua Status</option>
-          <option value="active">Aktif</option>
-          <option value="archived">Diarsipkan</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Projects Grid -->
-    <div v-if="isLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div v-for="i in 6" :key="i" class="h-48 rounded-2xl bg-slate-900/60 border border-slate-800/80 animate-pulse"></div>
-    </div>
-
-    <div v-else-if="projects.length === 0" class="p-16 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 space-y-3">
-      <div class="text-4xl">📁</div>
-      <h3 class="font-bold text-white text-base">Tidak ada proyek yang cocok</h3>
-      <p class="text-xs text-slate-400">Coba ubah kata kunci pencarian atau buat proyek baru.</p>
-    </div>
-
-    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div
-        v-for="project in projects"
+    <div v-else class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <article
+        v-for="(project, i) in projects"
         :key="project.id"
-        class="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 flex flex-col justify-between hover:border-violet-500/50 transition-all hover:shadow-xl"
+        v-reveal="(i % 3) * 70"
+        v-tilt="3"
+        class="card group flex flex-col justify-between border-2 p-6 transition-all hover:border-ink hover:shadow-brutal"
       >
-        <div class="space-y-3">
-          <div class="flex items-start justify-between gap-2">
-            <h3 class="font-bold text-base text-white truncate">{{ project.name }}</h3>
-            <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              {{ project.status }}
+        <div>
+          <div class="flex items-start justify-between gap-3">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border-2 border-zinc-950 transition-transform duration-500 group-hover:-rotate-6" :class="tileColors[i % tileColors.length]">
+              <Icon name="code" class="h-5 w-5" />
+            </span>
+            <span class="chip" :class="project.status === 'archived' ? 'opacity-60' : ''">
+              <span class="h-1.5 w-1.5 rounded-full" :class="project.status === 'archived' ? 'bg-zinc-400' : 'bg-lime-500'"></span>
+              {{ project.status === 'archived' ? 'Diarsipkan' : 'Aktif' }}
             </span>
           </div>
+          <h3 class="mt-4 truncate font-display text-lg font-bold text-ink">{{ project.name }}</h3>
+          <p class="mt-1 line-clamp-2 text-sm text-muted">{{ project.description || 'Tidak ada deskripsi' }}</p>
 
-          <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-            {{ project.description || 'Tidak ada deskripsi' }}
-          </p>
-
-          <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-            <span>📄 {{ project.files_count ?? 0 }} berkas</span>
-            <span>•</span>
-            <span class="truncate">Git: {{ project.github_repo || 'Belum terhubung' }}</span>
+          <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
+            <span class="inline-flex items-center gap-1.5"><Icon name="file-code" class="h-3.5 w-3.5" /> {{ project.files_count ?? 0 }} berkas</span>
+            <span class="inline-flex min-w-0 items-center gap-1.5">
+              <Icon name="github" class="h-3.5 w-3.5 shrink-0" />
+              <span class="truncate">{{ project.github_repo || 'Belum terhubung' }}</span>
+            </span>
           </div>
         </div>
 
-        <div class="pt-5 border-t border-slate-800/80 flex items-center justify-between">
-          <span class="text-[10px] text-slate-500">{{ formatDate(project.updated_at) }}</span>
-          <router-link
-            :to="`/workspace/${project.id}`"
-            class="px-3.5 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 text-xs font-semibold transition-colors flex items-center gap-1.5"
-          >
-            <span>💻</span>
-            <span>Buka Workspace</span>
+        <div class="mt-5 flex items-center justify-between border-t border-line pt-4">
+          <span class="inline-flex items-center gap-1.5 text-xs text-muted"><Icon name="clock" class="h-3.5 w-3.5" /> {{ formatDate(project.updated_at) }}</span>
+          <router-link :to="`/workspace/${project.id}`" class="btn btn-secondary btn-sm">
+            Buka
+            <Icon name="arrow-up-right" class="h-4 w-4 transition-transform group-hover:rotate-45" />
           </router-link>
         </div>
-      </div>
+      </article>
     </div>
 
     <!-- Pagination -->
-    <div v-if="totalPages > 1" class="flex justify-center items-center gap-2 pt-4">
-      <button
-        @click="changePage(currentPage - 1)"
-        :disabled="currentPage <= 1"
-        class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 hover:text-white disabled:opacity-40"
-      >
-        ← Sebelumnya
+    <nav v-if="totalPages > 1" class="flex items-center justify-center gap-3 pt-2">
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="currentPage <= 1" @click="changePage(currentPage - 1)">
+        <Icon name="chevron-left" class="h-4 w-4" />
+        Sebelumnya
       </button>
-      <span class="text-xs text-slate-500">
-        Halaman {{ currentPage }} dari {{ totalPages }}
-      </span>
-      <button
-        @click="changePage(currentPage + 1)"
-        :disabled="currentPage >= totalPages"
-        class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 hover:text-white disabled:opacity-40"
-      >
-        Berikutnya →
+      <span class="rounded-xl border-2 border-ink bg-card px-3 py-1.5 font-display text-sm font-bold text-ink shadow-brutal-sm tabular-nums">{{ currentPage }} / {{ totalPages }}</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="currentPage >= totalPages" @click="changePage(currentPage + 1)">
+        Berikutnya
+        <Icon name="chevron-right" class="h-4 w-4" />
       </button>
-    </div>
+    </nav>
 
-    <!-- Modal Create Project -->
-    <div
-      v-if="isCreateModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-    >
-      <div class="max-w-md w-full rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4 shadow-2xl">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h3 class="font-bold text-lg text-white">Buat Proyek Baru</h3>
-          <button @click="isCreateModalOpen = false" class="text-slate-400 hover:text-white">✕</button>
+    <!-- Create project modal -->
+    <transition name="page">
+      <div v-if="isCreateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 p-4 backdrop-blur-sm" @click.self="isCreateModalOpen = false">
+        <div class="w-full max-w-md rounded-[2rem] border-2 border-ink bg-card p-6 shadow-brutal-lg sm:p-8">
+          <div class="flex items-center justify-between">
+            <h3 class="font-display text-2xl font-bold text-ink">Proyek baru</h3>
+            <button type="button" class="btn-ghost grid h-9 w-9 place-items-center rounded-xl" title="Tutup" @click="isCreateModalOpen = false">
+              <Icon name="x" class="h-5 w-5" />
+            </button>
+          </div>
+
+          <form class="mt-6 space-y-5" @submit.prevent="handleCreateProject">
+            <div>
+              <label class="label" for="proj-name">Nama proyek</label>
+              <input id="proj-name" v-model="newProject.name" type="text" required class="input" placeholder="Aplikasi E-Commerce" />
+            </div>
+            <div>
+              <label class="label" for="proj-desc">Deskripsi</label>
+              <textarea id="proj-desc" v-model="newProject.description" rows="3" class="input resize-none" placeholder="Deskripsi singkat aplikasi yang ingin kamu kembangkan"></textarea>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" class="btn btn-ghost" @click="isCreateModalOpen = false">Batal</button>
+              <button type="submit" :disabled="isSubmitting" class="btn btn-primary shine">
+                <Icon v-if="isSubmitting" name="loader" class="h-4 w-4 animate-spin" />
+                {{ isSubmitting ? 'Menyiapkan...' : 'Buat proyek' }}
+              </button>
+            </div>
+          </form>
         </div>
-
-        <form @submit.prevent="handleCreateProject" class="space-y-4">
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Nama Proyek</label>
-            <input
-              v-model="newProject.name"
-              type="text"
-              required
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-sm text-white outline-none"
-              placeholder="Aplikasi E-Commerce"
-            />
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Deskripsi Proyek</label>
-            <textarea
-              v-model="newProject.description"
-              rows="3"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-sm text-white outline-none resize-none"
-              placeholder="Deskripsi singkat aplikasi yang ingin Anda kembangkan..."
-            ></textarea>
-          </div>
-
-          <div class="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              @click="isCreateModalOpen = false"
-              class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
-            >
-              Batal
-            </button>
-            <button
-              type="submit"
-              :disabled="isSubmitting"
-              class="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-semibold text-xs transition-all disabled:opacity-50"
-            >
-              {{ isSubmitting ? 'Menginisialisasi...' : 'Inisialisasi Proyek' }}
-            </button>
-          </div>
-        </form>
       </div>
-    </div>
+    </transition>
   </div>
 </template>
 
@@ -192,6 +163,20 @@ const newProject = reactive({
 });
 
 let searchDebounce: any = null;
+
+const statusOptions = [
+    { value: '', label: 'Semua' },
+    { value: 'active', label: 'Aktif' },
+    { value: 'archived', label: 'Arsip' },
+];
+const tileColors = ['bg-violet-500 text-white', 'bg-lime-300 text-zinc-900', 'bg-orange-400 text-zinc-900', 'bg-fuchsia-500 text-white', 'bg-yellow-300 text-zinc-900', 'bg-cyan-300 text-zinc-900'];
+
+// Changing the filter must restart from page 1, otherwise a high page number can come back empty
+const setStatus = (value: string) => {
+    statusFilter.value = value;
+    currentPage.value = 1;
+    fetchProjects();
+};
 
 const formatDate = (dateStr: string) => {
     if (!dateStr) return '';

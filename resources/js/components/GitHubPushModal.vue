@@ -1,21 +1,21 @@
 <template>
-  <div v-if="open" class="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-6 bg-black/70 backdrop-blur-sm" @click.self="close">
-    <div class="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden">
+  <div v-if="open" class="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-6 bg-zinc-950/60 backdrop-blur-sm" @click.self="close">
+    <div class="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-[2rem] bg-card border-2 border-ink overflow-hidden shadow-brutal-lg">
       <!-- Header -->
-      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+      <div class="px-5 py-4 border-b border-line flex items-center justify-between">
         <div>
-          <h3 class="font-bold text-white text-sm sm:text-base">Push ke GitHub</h3>
-          <p class="text-[11px] text-slate-400">Commit berkas dari chat langsung ke repositori &amp; branch pilihan Anda.</p>
+          <h3 class="font-bold text-ink text-sm sm:text-base">Push ke GitHub</h3>
+          <p class="text-[11px] text-muted">Commit berkas dari chat langsung ke repositori &amp; branch pilihan Anda.</p>
         </div>
-        <button @click="close" class="text-slate-400 hover:text-white text-sm p-1" title="Tutup">✕</button>
+        <button @click="close" class="text-muted hover:text-ink text-sm p-1" title="Tutup"><Icon name="x" class="h-4 w-4" /></button>
       </div>
 
       <div class="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
-        <div v-if="loadingStatus" class="text-slate-400">Memeriksa koneksi GitHub...</div>
+        <div v-if="loadingStatus" class="text-muted">Memeriksa koneksi GitHub...</div>
 
         <!-- Not connected: connect inline -->
         <div v-else-if="!status.is_connected" class="space-y-3">
-          <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
+          <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300">
             Akun GitHub belum terhubung. Masukkan Personal Access Token dengan izin <span class="font-mono">repo</span>
             (classic) atau <span class="font-mono">Contents: Read and write</span> (fine-grained).
           </div>
@@ -24,12 +24,12 @@
             type="password"
             autocomplete="off"
             placeholder="ghp_... atau github_pat_..."
-            class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-white font-mono outline-none"
+            class="input font-mono"
           />
           <button
             @click="connect"
             :disabled="!token.trim() || connecting"
-            class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold disabled:opacity-40"
+            class="btn btn-primary shine disabled:opacity-40"
           >
             {{ connecting ? 'Menghubungkan...' : 'Hubungkan GitHub' }}
           </button>
@@ -37,32 +37,32 @@
 
         <!-- Connected -->
         <template v-else>
-          <div class="flex items-center justify-between text-slate-400">
-            <span>Terhubung sebagai <span class="text-cyan-300 font-semibold">@{{ status.username }}</span></span>
-            <button @click="loadRepos" class="hover:text-white" :disabled="loadingRepos">{{ loadingRepos ? 'Memuat...' : '↻ Muat ulang repo' }}</button>
+          <div class="flex items-center justify-between text-muted">
+            <span>Terhubung sebagai <span class="text-cyan-600 dark:text-cyan-300 font-semibold">@{{ status.username }}</span></span>
+            <button @click="loadRepos" class="hover:text-ink" :disabled="loadingRepos"><span class="inline-flex items-center gap-1"><Icon name="refresh" class="h-3.5 w-3.5" />{{ loadingRepos ? 'Memuat...' : 'Muat ulang repo' }}</span></button>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="space-y-1">
-              <span class="text-slate-400">Repositori</span>
+              <span class="text-muted">Repositori</span>
               <input
                 v-model="repo"
                 list="gh-repo-list"
                 placeholder="https://github.com/pemilik/nama-repo"
                 @change="onRepoChange"
-                class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-white font-mono outline-none"
+                class="input font-mono"
               />
               <datalist id="gh-repo-list">
-                <option v-for="r in repos" :key="r.id" :value="r.full_name">{{ r.private ? '🔒' : '' }}</option>
+                <option v-for="r in repos" :key="r.id" :value="r.full_name">{{ r.private ? '[privat] ' : '' }}</option>
               </datalist>
             </label>
             <label class="space-y-1">
-              <span class="text-slate-400">Branch <span class="text-slate-500">(dibuat otomatis jika belum ada)</span></span>
+              <span class="text-muted">Branch <span class="text-muted">(dibuat otomatis jika belum ada)</span></span>
               <input
                 v-model="branch"
                 list="gh-branch-list"
                 placeholder="main"
-                class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-white font-mono outline-none"
+                class="input font-mono"
               />
               <datalist id="gh-branch-list">
                 <option v-for="b in branches" :key="b" :value="b" />
@@ -71,63 +71,63 @@
           </div>
 
           <label class="block space-y-1">
-            <span class="text-slate-400">Pesan commit</span>
+            <span class="text-muted">Pesan commit</span>
             <input
               v-model="commitMessage"
-              class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-400 text-white outline-none"
+              class="input"
             />
           </label>
 
           <div class="space-y-2">
             <div class="flex items-center justify-between">
-              <span class="text-slate-400">Berkas ({{ selectedCount }} dipilih)</span>
-              <button @click="addEmptyFile" class="text-cyan-400 hover:text-cyan-300">+ Tambah berkas</button>
+              <span class="text-muted">Berkas ({{ selectedCount }} dipilih)</span>
+              <button @click="addEmptyFile" class="text-violet-600 dark:text-violet-400 hover:text-violet-600 dark:hover:text-violet-300">+ Tambah berkas</button>
             </div>
-            <div v-if="rows.length === 0" class="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-400">
+            <div v-if="rows.length === 0" class="p-3 rounded-xl bg-surface border border-line text-muted">
               Tidak ada blok kode di pesan ini. Minta AI menulis berkas dengan format <span class="font-mono">```php:path/berkas.php</span>.
             </div>
             <div
               v-for="(row, i) in rows"
               :key="row.key"
-              class="rounded-xl bg-slate-950 border"
-              :class="row.selected && !isSafePath(row.path) ? 'border-rose-500/50' : 'border-slate-800'"
+              class="rounded-xl bg-surface border"
+              :class="row.selected && !isSafePath(row.path) ? 'border-rose-500/50' : 'border-line'"
             >
               <div class="flex items-center gap-2 p-2">
                 <input type="checkbox" v-model="row.selected" class="accent-violet-500" />
                 <input
                   v-model="row.path"
                   placeholder="path/ke/berkas.ext"
-                  class="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 focus:border-cyan-400 text-white font-mono outline-none"
+                  class="flex-1 min-w-0 px-2 py-1 rounded-lg bg-card border border-line focus:border-violet-400 text-ink font-mono outline-none"
                 />
-                <span class="text-[10px] text-slate-500 shrink-0">{{ formatSize(row.content) }}</span>
-                <button @click="row.expanded = !row.expanded" class="text-slate-400 hover:text-white shrink-0 px-1">{{ row.expanded ? '▲' : '▼' }}</button>
-                <button @click="rows.splice(i, 1)" class="text-slate-500 hover:text-rose-400 shrink-0 px-1" title="Hapus">✕</button>
+                <span class="text-[10px] text-muted shrink-0">{{ formatSize(row.content) }}</span>
+                <button @click="row.expanded = !row.expanded" class="text-muted hover:text-ink shrink-0 px-1"><Icon :name="row.expanded ? 'chevron-up' : 'chevron-down'" class="h-4 w-4" /></button>
+                <button @click="rows.splice(i, 1)" class="text-muted hover:text-rose-600 dark:hover:text-rose-400 shrink-0 px-1" title="Hapus"><Icon name="x" class="h-4 w-4" /></button>
               </div>
               <textarea
                 v-if="row.expanded"
                 v-model="row.content"
                 rows="10"
                 spellcheck="false"
-                class="w-full p-2 bg-slate-950 border-t border-slate-800 text-[11px] text-slate-200 font-mono outline-none resize-y"
+                class="w-full p-2 bg-surface border-t border-line text-[11px] text-ink font-mono outline-none resize-y"
               ></textarea>
             </div>
           </div>
 
-          <div v-if="result" class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 space-y-1">
+          <div v-if="result" class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-300 space-y-1">
             <p>{{ result.message }}<span v-if="result.branch_created"> (branch baru dibuat)</span></p>
             <a :href="result.commit_url" target="_blank" rel="noopener" class="underline font-mono break-all">{{ result.commit_url }}</a>
           </div>
-          <div v-if="error" class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 whitespace-pre-wrap">{{ error }}</div>
+          <div v-if="error" class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300 whitespace-pre-wrap">{{ error }}</div>
         </template>
       </div>
 
       <!-- Footer -->
-      <div v-if="status.is_connected" class="px-5 py-3 border-t border-slate-800 flex items-center justify-end gap-2">
-        <button @click="close" class="px-4 py-2 rounded-xl text-slate-300 hover:bg-slate-800 text-xs">Tutup</button>
+      <div v-if="status.is_connected" class="px-5 py-3 border-t border-line flex items-center justify-end gap-2">
+        <button @click="close" class="px-4 py-2 rounded-xl text-ink/80 hover:bg-surface-2 text-xs">Tutup</button>
         <button
           @click="push"
           :disabled="!canPush || pushing"
-          class="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 text-white font-bold text-xs disabled:opacity-40 disabled:pointer-events-none"
+          class="btn btn-primary shine btn-sm disabled:opacity-40 disabled:pointer-events-none"
         >
           {{ pushing ? 'Mendorong...' : `Push ${selectedCount} berkas` }}
         </button>

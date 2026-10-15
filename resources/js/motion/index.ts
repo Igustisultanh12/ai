@@ -121,7 +121,7 @@ const autoReveal = (root: ParentNode): void => {
 /* ------------------------------------------------------------------ */
 
 const CARD_SELECTOR = 'main .rounded-3xl.border, main .rounded-2xl.border, main .rounded-xl.border, [data-spotlight]';
-const PRIMARY_BUTTON_SELECTOR = 'button[class*="bg-gradient-to"], a[class*="bg-gradient-to"], [data-shine]';
+const PRIMARY_BUTTON_SELECTOR = 'button[class*="bg-gradient-to"], a[class*="bg-gradient-to"], .btn-primary, .btn-brutal, [data-shine]';
 
 const isStatic = (el: Element): boolean => getComputedStyle(el).position === 'static';
 
@@ -143,10 +143,12 @@ const enhanceButtons = (root: ParentNode): void => {
         // Avatars/logos also use gradients: only real controls get the button effects
         if (!(el instanceof HTMLButtonElement) && !(el instanceof HTMLAnchorElement) && !el.hasAttribute('data-shine')) return;
         el.dataset.motionBtn = '1';
-        if (isStatic(el) || getComputedStyle(el).position === 'relative') {
+        // .btn-brutal has its own hover lift; .shine already sweeps light
+        if (!el.classList.contains('shine') && !el.classList.contains('btn-brutal')
+            && (isStatic(el) || getComputedStyle(el).position === 'relative')) {
             el.classList.add('btn-shine');
         }
-        if (canHover() && !reduceMotion()) {
+        if (canHover() && !reduceMotion() && !el.classList.contains('btn-brutal')) {
             el.classList.add('btn-magnetic');
         }
     });
@@ -192,7 +194,7 @@ const onPointerOut = (event: PointerEvent): void => {
 const onPointerDown = (event: PointerEvent): void => {
     const target = event.target as Element | null;
     if (!target || !(target instanceof Element) || reduceMotion()) return;
-    const btn = target.closest<HTMLElement>('.btn-shine');
+    const btn = target.closest<HTMLElement>('.btn-shine, .btn-primary, .shine');
     if (!btn || (btn as HTMLButtonElement).disabled) return;
 
     const r = btn.getBoundingClientRect();
@@ -204,6 +206,58 @@ const onPointerDown = (event: PointerEvent): void => {
     ripple.style.top = `${event.clientY - r.top - size / 2}px`;
     btn.appendChild(ripple);
     window.setTimeout(() => ripple.remove(), 650);
+};
+
+/* ------------------------------------------------------------------ */
+/* Custom cursor: a dot plus a trailing ring that grows over controls  */
+/* ------------------------------------------------------------------ */
+
+const INTERACTIVE = 'a, button, [role="button"], select, label[for], summary, [data-cursor]';
+const TEXTUAL = 'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, [contenteditable="true"]';
+
+const installCursor = (): void => {
+    if (!canHover() || reduceMotion()) return;
+
+    const dot = document.createElement('div');
+    const ring = document.createElement('div');
+    dot.className = 'cursor-dot';
+    ring.className = 'cursor-ring';
+    dot.setAttribute('aria-hidden', 'true');
+    ring.setAttribute('aria-hidden', 'true');
+    document.body.append(dot, ring);
+
+    let x = -100;
+    let y = -100;
+    let rx = -100;
+    let ry = -100;
+    let frame = 0;
+
+    const loop = () => {
+        rx += (x - rx) * 0.2;
+        ry += (y - ry) * 0.2;
+        ring.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
+        frame = Math.abs(x - rx) + Math.abs(y - ry) > 0.3 ? requestAnimationFrame(loop) : 0;
+    };
+
+    document.addEventListener('pointermove', (e) => {
+        if (e.pointerType !== 'mouse') return;
+        x = e.clientX;
+        y = e.clientY;
+        dot.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+        if (!frame) frame = requestAnimationFrame(loop);
+
+        const t = e.target instanceof Element ? e.target : null;
+        ring.classList.toggle('is-text', !!t?.closest(TEXTUAL));
+        ring.classList.toggle('is-hover', !!t?.closest(INTERACTIVE));
+    }, { passive: true });
+
+    document.addEventListener('pointerdown', () => ring.classList.add('is-down'), { passive: true });
+    document.addEventListener('pointerup', () => ring.classList.remove('is-down'), { passive: true });
+    document.documentElement.addEventListener('mouseleave', () => {
+        x = y = -100;
+        dot.style.transform = 'translate3d(-100px, -100px, 0)';
+        if (!frame) frame = requestAnimationFrame(loop);
+    });
 };
 
 /* ------------------------------------------------------------------ */
@@ -309,6 +363,7 @@ export function installMotion(app: App): void {
         document.body.appendChild(progressBar);
 
         enhance(document);
+        installCursor();
 
         // New content (route changes, lists loaded from the API) gets the same treatment
         let pending = false;

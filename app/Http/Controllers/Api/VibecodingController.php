@@ -66,8 +66,8 @@ class VibecodingController extends Controller
                     $push = $this->tryPush($project->fresh(), $user, $pushCommand);
                     $run->update([
                         'build_log' => trim(($run->build_log ?? '') . "\n" . ($push['success']
-                            ? "✓ Push ke GitHub: {$push['commit_url']}"
-                            : "⚠ Push ke GitHub gagal: {$push['message']}")),
+                            ? "[OK] Push ke GitHub: {$push['commit_url']}"
+                            : "[PERINGATAN] Push ke GitHub gagal: {$push['message']}")),
                     ]);
                 } else {
                     $push = [
@@ -177,8 +177,8 @@ class VibecodingController extends Controller
                 : "Push ke GitHub gagal: {$push['message']}",
             'proposed_patches' => [],
             'build_log' => $push['success']
-                ? "✓ " . $push['message'] . "\n" . implode("\n", array_map(fn ($f) => " - {$f}", $push['files']))
-                : "✗ " . $push['message'],
+                ? "[OK] " . $push['message'] . "\n" . implode("\n", array_map(fn ($f) => " - {$f}", $push['files']))
+                : "[GAGAL] " . $push['message'],
             'iterations_count' => 0,
             'started_at' => now(),
             'completed_at' => now(),

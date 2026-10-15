@@ -6,25 +6,320 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
-@theme {
-    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-    --color-slate-925: #0b1120;
+@custom-variant dark (&:where(.dark, .dark *));
+
+@utility bg-brand-gradient {
+    background-image: linear-gradient(120deg, #7c3aed 0%, #c026d3 45%, #f97316 100%);
+    background-size: 200% 200%;
 }
 
-/* Custom scrollbars for code editor and dark mode */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+/* ==========================================================================
+   Design tokens (shared with the PT Kreatif Sky Abadi company site)
+   Cheerful violet -> fuchsia -> orange palette with lime & yellow accents.
+   ========================================================================== */
+:root {
+    --c-surface: #fbf8ff;
+    --c-surface-2: #f3eeff;
+    --c-card: #ffffff;
+    --c-ink: #15101f;
+    --c-muted: #6b6480;
+    --c-line: #e9e3f5;
+    --c-shadow: #15101f;
+    --c-brand: #7c3aed;
+    --c-code: #15101f;
+    color-scheme: light;
 }
-::-webkit-scrollbar-track {
-    background: transparent;
+
+.dark {
+    --c-surface: #0c0916;
+    --c-surface-2: #141024;
+    --c-card: #19132d;
+    --c-ink: #f5f1ff;
+    --c-muted: #a8a0c2;
+    --c-line: #2d2547;
+    --c-shadow: #000000;
+    --c-brand: #a78bfa;
+    --c-code: #0f0b1c;
+    color-scheme: dark;
 }
-::-webkit-scrollbar-thumb {
-    background: rgba(100, 116, 139, 0.4);
-    border-radius: 9999px;
+
+@theme inline {
+    --color-surface: var(--c-surface);
+    --color-surface-2: var(--c-surface-2);
+    --color-card: var(--c-card);
+    --color-ink: var(--c-ink);
+    --color-muted: var(--c-muted);
+    --color-line: var(--c-line);
+    --color-brand: var(--c-brand);
+    --color-code: var(--c-code);
 }
-::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.6);
+
+@theme {
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-display: 'Space Grotesk', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --shadow-brutal-sm: 3px 3px 0 0 var(--c-shadow);
+    --shadow-brutal: 5px 5px 0 0 var(--c-shadow);
+    --shadow-brutal-lg: 8px 8px 0 0 var(--c-shadow);
+    --shadow-glow: 0 20px 60px -15px rgb(124 58 237 / 0.45);
+
+    --animate-float: float 7s ease-in-out infinite;
+    --animate-float-slow: float 11s ease-in-out infinite;
+    --animate-spin-slow: spin 14s linear infinite;
+    --animate-gradient: gradient-shift 8s ease infinite;
+    --animate-wiggle: wiggle 0.6s ease-in-out;
+    --animate-pop-in: pop-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    --animate-fade-up: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+    --animate-bounce-soft: bounce-soft 2.4s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+    33% { transform: translate3d(14px, -22px, 0) rotate(4deg); }
+    66% { transform: translate3d(-12px, 12px, 0) rotate(-3deg); }
+}
+@keyframes gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+@keyframes wiggle {
+    0%, 100% { transform: rotate(0); }
+    25% { transform: rotate(-8deg); }
+    75% { transform: rotate(8deg); }
+}
+@keyframes pop-in {
+    from { opacity: 0; transform: scale(0.85) translateY(8px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes fade-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes bounce-soft {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+/* ========================================================================== */
+@layer base {
+    html {
+        -webkit-tap-highlight-color: transparent;
+        text-rendering: optimizeLegibility;
+        scroll-behavior: smooth;
+    }
+    body {
+        background-color: var(--c-surface);
+        color: var(--c-ink);
+        font-family: var(--font-sans);
+    }
+    h1, h2, h3, h4, .font-display {
+        font-family: var(--font-display);
+        letter-spacing: -0.02em;
+    }
+    ::selection {
+        background: #f0abfc;
+        color: #15101f;
+    }
+    :focus-visible {
+        outline: 3px solid #a78bfa;
+        outline-offset: 2px;
+        border-radius: 8px;
+    }
+    [v-cloak] { display: none !important; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+        background: color-mix(in oklab, var(--c-muted) 45%, transparent);
+        border-radius: 999px;
+        border: 2px solid var(--c-surface);
+    }
+    /* Theme switch: no cross-fading of every surface */
+    .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+        transition: none !important;
+    }
+}
+
+/* ========================================================================== */
+@layer components {
+    .container-x {
+        @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+    }
+
+    .icon {
+        width: 1.15em;
+        height: 1.15em;
+        flex-shrink: 0;
+    }
+
+    .text-gradient {
+        @apply bg-gradient-to-r from-violet-600 via-fuchsia-500 to-orange-400 bg-clip-text text-transparent;
+        background-size: 200% auto;
+    }
+    .dark .text-gradient {
+        @apply from-violet-400 via-fuchsia-400 to-orange-300;
+    }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+        @apply relative inline-flex select-none items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-2xl px-5 py-2.5 text-sm font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
+    .btn-primary {
+        @apply bg-brand-gradient text-white shadow-[0_10px_30px_-10px_rgb(124_58_237/0.7)] hover:shadow-[0_14px_40px_-10px_rgb(192_38_211/0.75)];
+        animation: gradient-shift 6s ease infinite;
+    }
+    .btn-dark {
+        @apply bg-ink text-surface hover:opacity-90;
+    }
+    .btn-brutal {
+        @apply border-2 border-ink bg-lime-300 text-zinc-950 shadow-brutal-sm hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-brutal;
+    }
+    .btn-secondary {
+        @apply border-2 border-line bg-card text-ink hover:border-violet-400 hover:text-violet-600 dark:hover:text-violet-300;
+    }
+    .btn-ghost {
+        @apply text-muted hover:bg-surface-2 hover:text-ink;
+    }
+    .btn-danger {
+        @apply bg-rose-500 text-white hover:bg-rose-600;
+    }
+    .btn-success {
+        @apply bg-emerald-500 text-white hover:bg-emerald-600;
+    }
+    .btn-sm { @apply rounded-xl px-3 py-1.5 text-xs; }
+    .btn-lg { @apply rounded-2xl px-7 py-3.5 text-base; }
+    .btn-icon { @apply h-10 w-10 rounded-xl p-0; }
+
+    /* Light sweeping across a button on hover */
+    .shine::after {
+        content: '';
+        position: absolute;
+        inset: -50% auto -50% -60%;
+        width: 40%;
+        transform: rotate(25deg) translateX(-150%);
+        background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+        transition: transform 0.7s ease;
+        pointer-events: none;
+    }
+    .shine:hover::after { transform: rotate(25deg) translateX(500%); }
+
+    /* ---------- Cards ---------- */
+    .card {
+        @apply rounded-3xl border border-line bg-card;
+    }
+    .card-brutal {
+        @apply rounded-3xl border-2 border-ink bg-card shadow-brutal transition-all duration-300;
+    }
+    .card-hover {
+        @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-glow;
+    }
+    .glass {
+        @apply border border-white/30 bg-white/60 backdrop-blur-xl dark:border-white/10 dark:bg-white/5;
+    }
+
+    /* ---------- Forms ---------- */
+    .label { @apply mb-1.5 block text-sm font-semibold text-ink; }
+    .input {
+        @apply w-full rounded-2xl border-2 border-line bg-card px-4 py-2.5 text-sm text-ink placeholder:text-muted/70 transition focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 focus:outline-none disabled:opacity-60;
+    }
+    .input-sm { @apply rounded-xl px-3 py-2 text-sm; }
+    select.input {
+        @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b80a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-position: right 0.9rem center;
+        background-size: 1rem;
+    }
+    .help { @apply mt-1 text-xs text-muted; }
+    .checkbox { @apply h-5 w-5 cursor-pointer rounded-md border-2 border-line accent-violet-600; }
+
+    /* ---------- Misc ---------- */
+    .chip { @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1 text-xs font-semibold text-muted; }
+    .section { @apply py-20 sm:py-28; }
+    .eyebrow { @apply inline-flex items-center gap-2 rounded-full border-2 border-ink bg-yellow-300 px-3 py-1 text-xs font-extrabold tracking-wider text-zinc-900 uppercase shadow-brutal-sm; }
+    .page-title { @apply font-display text-2xl font-bold tracking-tight text-ink sm:text-3xl; }
+    .page-subtitle { @apply mt-1 text-sm text-muted; }
+
+    .table-wrap { @apply overflow-x-auto rounded-3xl border border-line bg-card; }
+    .table { @apply w-full text-left text-sm; }
+    .table thead th { @apply border-b border-line bg-surface-2/60 px-4 py-3 text-xs font-bold tracking-wider text-muted uppercase; }
+    .table tbody td { @apply border-b border-line/70 px-4 py-3 align-middle; }
+    .table tbody tr { @apply transition-colors hover:bg-surface-2/50; }
+    .table tbody tr:last-child td { @apply border-b-0; }
+
+    .grid-bg {
+        background-image:
+            linear-gradient(to right, color-mix(in oklab, var(--c-line) 70%, transparent) 1px, transparent 1px),
+            linear-gradient(to bottom, color-mix(in oklab, var(--c-line) 70%, transparent) 1px, transparent 1px);
+        background-size: 44px 44px;
+    }
+    .dot-bg {
+        background-image: radial-gradient(color-mix(in oklab, var(--c-muted) 35%, transparent) 1.2px, transparent 1.2px);
+        background-size: 22px 22px;
+    }
+    .noise {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");
+    }
+}
+
+/* Saved "Aksi GitHub & proyek" activity log inside finished chat messages */
+.chat-md details {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--c-line);
+    border-radius: 0.9rem;
+    background: color-mix(in oklab, var(--c-surface-2) 70%, transparent);
+    padding: 0.45rem 0.8rem;
+    white-space: normal;
+}
+.chat-md details > summary {
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--c-muted);
+    user-select: none;
+}
+.chat-md details > summary::-webkit-details-marker { display: none; }
+.chat-md details > summary::before {
+    content: '';
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-right: 0.5rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+}
+.chat-md details[open] > summary::before { transform: rotate(45deg); }
+.chat-md details ul {
+    margin: 0.5rem 0 0.25rem;
+    padding-left: 0.25rem;
+    list-style: none;
+    font-size: 0.75rem;
+    color: var(--c-muted);
+}
+.chat-md details li { margin: 0.2rem 0; }
+.chat-md a { color: #7c3aed; text-decoration: underline; text-underline-offset: 2px; }
+.dark .chat-md a { color: #c4b5fd; }
+.chat-md pre {
+    margin: 0.6rem 0;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    border-radius: 1rem;
+    background: var(--c-code);
+    color: #ede9fe;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    white-space: pre;
+}
+.chat-md :not(pre) > code {
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.4rem;
+    background: var(--c-surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -35,38 +330,3 @@
         scroll-behavior: auto !important;
     }
 }
-
-
-/* Saved "Aksi GitHub & proyek" activity log inside finished chat messages */
-.chat-md details {
-    margin-bottom: 0.75rem;
-    border: 1px solid rgb(30 41 59);
-    border-radius: 0.75rem;
-    background: rgb(2 6 23 / 0.5);
-    padding: 0.4rem 0.75rem;
-    white-space: normal;
-}
-.chat-md details > summary {
-    cursor: pointer;
-    list-style: none;
-    font-size: 0.75rem;
-    color: rgb(148 163 184);
-    user-select: none;
-}
-.chat-md details > summary::-webkit-details-marker { display: none; }
-.chat-md details > summary::before {
-    content: '▸';
-    display: inline-block;
-    margin-right: 0.4rem;
-    transition: transform 0.15s ease;
-}
-.chat-md details[open] > summary::before { transform: rotate(90deg); }
-.chat-md details ul {
-    margin: 0.5rem 0 0.25rem;
-    padding-left: 0.25rem;
-    list-style: none;
-    font-size: 0.75rem;
-    color: rgb(148 163 184);
-}
-.chat-md details li { margin: 0.2rem 0; }
-.chat-md details a { color: rgb(34 211 238); text-decoration: underline; }

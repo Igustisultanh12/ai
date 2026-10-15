@@ -103,9 +103,9 @@ class SandboxRunner
                 $phpCheck = $this->checkPhpSyntax($file->content);
                 if (!$phpCheck['valid']) {
                     $errors[] = "Sintaks PHP tidak valid pada {$file->path}: " . $phpCheck['error'];
-                    $logs[] = "✗ {$file->path}: " . $phpCheck['error'];
+                    $logs[] = "[GAGAL] {$file->path}: " . $phpCheck['error'];
                 } else {
-                    $logs[] = "✓ {$file->path}: Sintaks PHP valid";
+                    $logs[] = "[OK] {$file->path}: Sintaks PHP valid";
                 }
             }
 
@@ -114,15 +114,15 @@ class SandboxRunner
                 json_decode($file->content);
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     $errors[] = "JSON tidak valid pada {$file->path}: " . json_last_error_msg();
-                    $logs[] = "✗ {$file->path}: " . json_last_error_msg();
+                    $logs[] = "[GAGAL] {$file->path}: " . json_last_error_msg();
                 } else {
-                    $logs[] = "✓ {$file->path}: Format JSON valid";
+                    $logs[] = "[OK] {$file->path}: Format JSON valid";
                 }
             }
         }
 
         $isPassed = empty($errors);
-        $logs[] = $isPassed ? "✓ Semua pemeriksaan kode sandbox berhasil lolos." : "✗ Terdapat " . count($errors) . " kesalahan pada proyek.";
+        $logs[] = $isPassed ? "[OK] Semua pemeriksaan kode sandbox berhasil lolos." : "[GAGAL] Terdapat " . count($errors) . " kesalahan pada proyek.";
 
         return [
             'success' => $isPassed,
