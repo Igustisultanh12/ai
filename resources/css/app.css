@@ -34,3 +34,38 @@
         scroll-behavior: auto !important;
     }
 }
+
+
+/* Saved "Aksi GitHub & proyek" activity log inside finished chat messages */
+.chat-md details {
+    margin-bottom: 0.75rem;
+    border: 1px solid rgb(30 41 59);
+    border-radius: 0.75rem;
+    background: rgb(2 6 23 / 0.5);
+    padding: 0.4rem 0.75rem;
+    white-space: normal;
+}
+.chat-md details > summary {
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.75rem;
+    color: rgb(148 163 184);
+    user-select: none;
+}
+.chat-md details > summary::-webkit-details-marker { display: none; }
+.chat-md details > summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 0.4rem;
+    transition: transform 0.15s ease;
+}
+.chat-md details[open] > summary::before { transform: rotate(90deg); }
+.chat-md details ul {
+    margin: 0.5rem 0 0.25rem;
+    padding-left: 0.25rem;
+    list-style: none;
+    font-size: 0.75rem;
+    color: rgb(148 163 184);
+}
+.chat-md details li { margin: 0.2rem 0; }
+.chat-md details a { color: rgb(34 211 238); text-decoration: underline; }

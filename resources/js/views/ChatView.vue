@@ -118,7 +118,7 @@
             class="p-4 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-2xl overflow-hidden"
             :class="msg.role === 'user' ? 'bg-violet-600 text-white rounded-br-none shadow-md' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none shadow-xl'"
           >
-            <div class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(msg.content)"></div>
+            <div class="chat-md whitespace-pre-wrap font-sans" v-html="renderMarkdown(msg.content)"></div>
             <div
               v-if="msg.role === 'assistant' && codeFilesOf(msg).length > 0"
               class="mt-3 pt-2 border-t border-slate-800 flex flex-wrap items-center gap-2 text-[11px]"
@@ -143,23 +143,14 @@
             AI
           </div>
           <div class="p-4 rounded-2xl bg-slate-900 border border-violet-500/30 text-slate-200 text-xs sm:text-sm leading-relaxed max-w-2xl rounded-bl-none shadow-xl">
-            <ul v-if="toolActivity.length" class="mb-3 space-y-1 text-[11px] font-mono">
-              <li v-for="t in toolActivity" :key="t.id" class="flex items-start gap-2">
-                <span v-if="t.status === 'running'" class="mt-0.5 w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
-                <span v-else-if="t.status === 'done'" class="text-emerald-400 shrink-0">✓</span>
-                <span v-else class="text-rose-400 shrink-0">✕</span>
-                <span :class="t.status === 'error' ? 'text-rose-300' : 'text-slate-300'">
-                  {{ t.label }}
-                  <a v-if="t.link" :href="t.link" target="_blank" rel="noopener" class="text-cyan-400 underline ml-1">lihat</a>
-                  <span v-if="t.error" class="block text-rose-400/80">{{ t.error }}</span>
-                </span>
-              </li>
-            </ul>
-            <div class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(streamingText)"></div>
-            <div class="mt-2 flex items-center gap-2 text-[10px] text-cyan-400 font-mono">
-              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-              <span>{{ writingProgress || (isWaitingServer ? 'Menunggu hasil dari server...' : toolActivity.some(t => t.status === 'running') ? 'Menjalankan aksi...' : 'Streaming token dari gateway TokenomixAI...') }}</span>
-            </div>
+            <AgentActivity
+              class="mb-3"
+              :status="agentStatusLabel"
+              :steps="toolActivity"
+              :started-at="agentStartedAt"
+              :active="isStreaming"
+            />
+            <div v-if="streamingText" class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(streamingText)"></div>
           </div>
         </div>
       </div>
@@ -215,6 +206,8 @@ import { useToast } from '@/composables/useToast';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import GitHubPushModal from '@/components/GitHubPushModal.vue';
+import AgentActivity from '@/components/AgentActivity.vue';
+import type { AgentStep } from '@/types/agent';
 import { extractCodeFiles, collectLatestFiles, type CodeFile } from '@/utils/codeBlocks';
 import { useModels } from '@/composables/useModels';
 
@@ -229,7 +222,25 @@ const { models, defaultModel, source: modelSource, load: loadModels, isAvailable
 const selectedModel = ref('');
 const projects = ref<any[]>([]);
 const writingProgress = ref('');
-const toolActivity = ref<{ id: string; label: string; status: string; link?: string | null; error?: string | null }[]>([]);
+const isWaitingServer = ref(false);
+const toolActivity = ref<AgentStep[]>([]);
+const agentPhase = ref('Menghubungi model');
+const agentStartedAt = ref(Date.now());
+
+// What the AI is doing right now, shown next to the animated indicator
+const agentStatusLabel = computed(() => {
+    if (isWaitingServer.value) return 'Koneksi terputus, menunggu hasil dari server';
+    if (writingProgress.value) return writingProgress.value;
+    const running = [...toolActivity.value].reverse().find(t => t.status === 'running');
+    if (running) return running.label;
+    return agentPhase.value;
+});
+
+const TOOL_WRITING_LABEL: Record<string, string> = {
+    github_push_files: 'Menulis berkas untuk di-push',
+    project_write_files: 'Menulis berkas proyek',
+    github_create_repo: 'Menyiapkan repositori baru',
+};
 const selectedProjectId = ref('');
 const pushModalOpen = ref(false);
 const pushFiles = ref<CodeFile[]>([]);
@@ -390,7 +401,7 @@ const selectConversation = async (id: string) => {
         const last = [...messages.value].reverse().find((m: any) => m.role === 'assistant');
         const ageMs = last ? Date.now() - new Date(last.updated_at || last.created_at).getTime() : Infinity;
         if (last && last.status === 'streaming' && !isStreaming.value && ageMs < 20 * 60 * 1000) {
-            waitForServerResult(id);
+            waitForServerResult(id, new Date(last.created_at).getTime());
         }
     } catch (e: any) {
         toast.error('Gagal memuat pesan: ' + e.message);
@@ -443,6 +454,8 @@ const sendMessage = async () => {
     streamingText.value = '';
     toolActivity.value = [];
     writingProgress.value = '';
+    agentPhase.value = 'Menghubungi model';
+    agentStartedAt.value = Date.now();
 
     try {
         const csrfToken = getCsrfToken();
@@ -499,28 +512,35 @@ const sendMessage = async () => {
                         }
                         if (parsed.content) {
                             streamingText.value += parsed.content;
+                            agentPhase.value = 'Menulis jawaban';
+                            writingProgress.value = '';
                             scrollToBottom();
                         } else if (parsed.event === 'tool') {
                             writingProgress.value = '';
                             const existing = toolActivity.value.find(t => t.id === parsed.id);
                             if (existing) {
-                                Object.assign(existing, parsed);
+                                Object.assign(existing, parsed, parsed.status !== 'running' ? { endedAt: Date.now() } : {});
                             } else {
-                                toolActivity.value.push(parsed);
+                                toolActivity.value.push({ ...parsed, startedAt: Date.now() });
+                            }
+                            if (parsed.status !== 'running') {
+                                agentPhase.value = 'Berpikir';
                             }
                             if (parsed.project_id) {
                                 selectedProjectId.value = parsed.project_id;
                                 fetchProjects();
                             }
                             scrollToBottom();
+                        } else if (parsed.event === 'start') {
+                            agentPhase.value = 'Berpikir';
                         } else if (parsed.event === 'retry') {
                             // Gateway busy (502/429) or connection dropped: the server retries this step
                             streamingText.value = parsed.content ?? streamingText.value;
-                            writingProgress.value = `Gateway TokenomixAI sibuk, mencoba ulang (${parsed.attempt}/${parsed.max}) dalam ${parsed.wait} detik...`;
+                            writingProgress.value = `Gateway sibuk, mencoba ulang (${parsed.attempt}/${parsed.max})`;
                             scrollToBottom();
                         } else if (parsed.event === 'progress') {
                             writingProgress.value = parsed.chars > 0
-                                ? `AI sedang menulis berkas... ${(parsed.chars / 1024).toFixed(1)} KB`
+                                ? `${TOOL_WRITING_LABEL[parsed.tool] || 'Menyiapkan aksi'} · ${(parsed.chars / 1024).toFixed(1)} KB`
                                 : '';
                             scrollToBottom();
                         } else if (parsed.event === 'stopped') {
@@ -585,17 +605,21 @@ const sendMessage = async () => {
     }
 };
 
-const isWaitingServer = ref(false);
 
 /**
  * Poll the conversation until the assistant message that is still being produced
  * on the server is finished, showing its saved progress meanwhile.
  */
-const waitForServerResult = async (convId: string) => {
+const waitForServerResult = async (convId: string, startedAt?: number) => {
     if (isWaitingServer.value) return;
+    if (!isStreaming.value) {
+        // Resuming a conversation that is still running on the server
+        toolActivity.value = [];
+        agentStartedAt.value = startedAt ?? Date.now();
+    }
     isWaitingServer.value = true;
     isStreaming.value = true;
-    toolActivity.value = [];
+    writingProgress.value = '';
     const deadline = Date.now() + 20 * 60 * 1000;
 
     try {
