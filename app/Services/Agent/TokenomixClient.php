@@ -196,8 +196,11 @@ class TokenomixClient
      * Stream chat completion with SSE parsing (POST /v1/chat/completions, stream: true).
      * Invokes $callback($chunkText, $isDone, $usageData) for each incoming event.
      * Returning false from the callback aborts the upstream request (used for "stop").
+     * Returns the assembled tool calls (OpenAI format) and finish reason of the turn.
+     *
+     * @return array{tool_calls: array, finish_reason: ?string, aborted: bool}
      */
-    public function streamChatCompletion(array $payload, callable $callback): void
+    public function streamChatCompletion(array $payload, callable $callback): array
     {
         if (!$this->isConfigured()) {
             throw new Exception('TokenomixAI API Key belum dikonfigurasi.');
@@ -225,6 +228,8 @@ class TokenomixClient
         $aborted = false;
         $done = false;
         $retryAfter = null;
+        $toolCalls = [];
+        $finishReason = null;
 
         curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curlHandle, $header) use (&$retryAfter) {
             if (stripos($header, 'Retry-After:') === 0) {
@@ -233,7 +238,7 @@ class TokenomixClient
             return strlen($header);
         });
 
-        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (&$buffer, &$rawBody, &$streamStarted, &$aborted, &$done, $callback) {
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (&$buffer, &$rawBody, &$streamStarted, &$aborted, &$done, &$toolCalls, &$finishReason, $callback) {
             $httpCode = curl_getinfo($curlHandle, CURLINFO_HTTP_CODE);
             if ($httpCode >= 400) {
                 // Error responses are plain JSON, keep them for the error message.
@@ -273,6 +278,27 @@ class TokenomixClient
                 }
 
                 $streamStarted = true;
+
+                // Assemble streamed tool calls: pieces arrive per index
+                foreach (($decoded['choices'][0]['delta']['tool_calls'] ?? []) as $tc) {
+                    $i = $tc['index'] ?? count($toolCalls);
+                    $toolCalls[$i] ??= ['id' => '', 'type' => 'function', 'function' => ['name' => '', 'arguments' => '']];
+                    if (!empty($tc['id'])) {
+                        $toolCalls[$i]['id'] = $tc['id'];
+                    }
+                    if (isset($tc['function']['name'])) {
+                        $toolCalls[$i]['function']['name'] .= $tc['function']['name'];
+                    }
+                    if (isset($tc['function']['arguments'])) {
+                        $toolCalls[$i]['function']['arguments'] .= is_string($tc['function']['arguments'])
+                            ? $tc['function']['arguments']
+                            : json_encode($tc['function']['arguments']);
+                    }
+                }
+                if (!empty($decoded['choices'][0]['finish_reason'])) {
+                    $finishReason = $decoded['choices'][0]['finish_reason'];
+                }
+
                 $chunkContent = $decoded['choices'][0]['delta']['content'] ?? '';
                 $usage = $decoded['usage'] ?? null;
                 if ($callback((string) $chunkContent, false, $usage) === false) {
@@ -300,7 +326,7 @@ class TokenomixClient
         }
 
         if ($aborted) {
-            return; // stopped by caller
+            return ['tool_calls' => [], 'finish_reason' => 'stop', 'aborted' => true]; // stopped by caller
         }
 
         if (!$success && !$streamStarted) {
@@ -310,6 +336,17 @@ class TokenomixClient
         if (!$done) {
             $callback('', true, null);
         }
+
+        ksort($toolCalls);
+        $toolCalls = array_values(array_filter($toolCalls, fn ($t) => $t['function']['name'] !== ''));
+        foreach ($toolCalls as $n => &$t) {
+            if ($t['id'] === '') {
+                $t['id'] = 'call_' . $n . '_' . bin2hex(random_bytes(4));
+            }
+        }
+        unset($t);
+
+        return ['tool_calls' => $toolCalls, 'finish_reason' => $finishReason, 'aborted' => false];
     }
 
     /**

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Project;
+use App\Models\ModelMultiplier;
+use App\Services\Agent\ChatToolbox;
 use App\Services\Agent\ModelCatalogService;
 use App\Services\Agent\TokenomixClient;
 use App\Services\GitHub\GitHubService;
@@ -35,7 +37,14 @@ class ConversationController extends Controller
 Kamu adalah asisten pemrograman AI XZY. Jawab dalam bahasa yang dipakai pengguna.
 Jika kamu menulis isi sebuah berkas kode, beri label path relatif berkas tersebut pada pembuka blok kode dengan format ```bahasa:path/ke/berkas.ext (contoh: ```php:app/Http/Controllers/UserController.php), dan tulis isi berkas secara lengkap, bukan potongan, agar pengguna bisa langsung push ke GitHub dari chat.
 Untuk potongan kode contoh yang bukan berkas utuh, gunakan blok kode biasa tanpa path.
-Pengguna bisa meminta push ke GitHub dengan menulis "push ke https://github.com/pemilik/repo"; sistem yang menjalankannya, jadi jangan pernah mengaku sudah melakukan push sendiri.
+
+Kamu punya tool untuk GitHub dan proyek XZY, dan kamu BISA membaca repo, clone, mengubah kode, commit, dan push memakai token GitHub pengguna. Jangan menyuruh pengguna clone/copy-paste manual; kerjakan sendiri dengan tool:
+- Melihat/memperbaiki repo: github_list_files -> github_read_files (berkas yang relevan saja) -> tulis ulang berkas lengkap -> github_push_files.
+- Jika pengguna meminta mengubah/memperbaiki repo, perubahan itu memang untuk di-push ke repo tersebut (gunakan branch yang disebut pengguna, default branch jika tidak disebut). Jika pengguna hanya bertanya atau minta pratinjau, jangan push.
+- "Clone ke proyek": clone_repo_to_project, lalu project_read_files / project_write_files / project_push_to_github.
+- Membuat repo baru hanya jika diminta (github_create_repo).
+- Tulis isi berkas secara lengkap di argumen tool, jangan potongan atau placeholder. Pertahankan kode lain yang tidak diminta berubah.
+- Jangan pernah mengaku sudah push/clone tanpa hasil tool yang sukses. Setelah push, sebutkan repo, branch, dan link commit dari hasil tool. Jika tool gagal, jelaskan penyebabnya apa adanya.
 PROMPT;
 
     public function __construct(
@@ -251,11 +260,15 @@ PROMPT;
             ->values()
             ->toArray();
 
-        $systemPrompt = trim(self::CHAT_SYSTEM_PROMPT . "\n\n" . (string) $conversation->system_prompt);
+        $systemPrompt = trim(self::CHAT_SYSTEM_PROMPT . "\n\n" . $this->runtimeContext($conversation, $user) . "\n\n" . (string) $conversation->system_prompt);
         array_unshift($messagesHistory, ['role' => 'system', 'content' => $systemPrompt]);
 
         $idempotencyKey = "stream_msg_{$assistantMsg->id}_" . Str::random(6);
         $userMsgId = $userMsg->id;
+
+        $toolbox = app(ChatToolbox::class);
+        $modelInfo = ModelMultiplier::where('model_id', $selectedModel)->first();
+        $toolsEnabled = $modelInfo ? (bool) $modelInfo->supports_tools : true;
 
         return response()->stream(function () use (
             $user,
@@ -265,96 +278,191 @@ PROMPT;
             $selectedModel,
             $idempotencyKey,
             $streamId,
-            $userMsgId
+            $userMsgId,
+            $toolbox,
+            $toolsEnabled
         ) {
             ignore_user_abort(true);
             set_time_limit(0);
 
-            // Disable PHP output buffering
-            if (ob_get_level()) {
+            // Disable PHP output buffering so events reach the browser immediately
+            if (ob_get_level() && !app()->runningUnitTests()) {
                 ob_end_clean();
             }
 
+            $send = function (array|string $data) {
+                echo 'data: ' . (is_string($data) ? $data : json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . "\n\n";
+                flush();
+            };
+
             $fullContent = '';
-            $reportedUsage = null;
+            $activity = [];
+            $promptTotal = 0;
+            $completionTotal = 0;
+            $usageActual = true;
             $stopRequestedKey = "stream_stop:{$conversation->id}";
+            $stopped = false;
+            $messages = $messagesHistory;
+            $maxSteps = 15;
 
             try {
-                echo "data: " . json_encode([
+                $send([
                     'event' => 'start',
                     'model' => $selectedModel,
                     'user_message_id' => $userMsgId,
                     'assistant_message_id' => $assistantMsg->id,
                     'stream_id' => $streamId,
-                ]) . "\n\n";
-                flush();
-
-                $payload = [
-                    'model' => $selectedModel,
-                    'messages' => $messagesHistory,
-                    'temperature' => 0.7,
-                ];
-
-                $this->client->streamChatCompletion($payload, function ($chunkText, $isDone, $usage) use (
-                    &$fullContent,
-                    &$reportedUsage,
-                    $assistantMsg,
-                    $stopRequestedKey
-                ) {
-                    // Check if client requested stop: tell the client and abort upstream
-                    if (Cache::has($stopRequestedKey)) {
-                        echo "data: " . json_encode(['event' => 'stopped', 'message' => 'Generasi dibatalkan oleh pengguna.']) . "\n\n";
-                        flush();
-                        return false;
-                    }
-
-                    if ($usage) {
-                        $reportedUsage = $usage;
-                    }
-
-                    if ($isDone) {
-                        echo "data: [DONE]\n\n";
-                        flush();
-                    } else {
-                        $fullContent .= $chunkText;
-                        echo "data: " . json_encode(['content' => $chunkText]) . "\n\n";
-                        flush();
-                    }
-                });
-
-                // Update assistant message
-                $assistantMsg->update([
-                    'content' => $fullContent,
-                    'status' => Cache::has($stopRequestedKey) ? 'cancelled' : 'completed',
-                    'prompt_tokens' => $reportedUsage['prompt_tokens'] ?? null,
-                    'completion_tokens' => $reportedUsage['completion_tokens'] ?? null,
                 ]);
 
-                // Record Token Accounting
-                $pTokens = $reportedUsage['prompt_tokens'] ?? $this->accounting->estimateTokenCount(json_encode($messagesHistory));
-                $cTokens = $reportedUsage['completion_tokens'] ?? $this->accounting->estimateTokenCount($fullContent);
-                $dataSource = $reportedUsage ? 'actual' : 'estimated';
+                for ($step = 1; $step <= $maxSteps; $step++) {
+                    $turnText = '';
+                    $reportedUsage = null;
 
-                $this->accounting->recordUsage(
-                    user: $user,
-                    model: $selectedModel,
-                    idempotencyKey: $idempotencyKey,
-                    promptTokens: $pTokens,
-                    completionTokens: $cTokens,
-                    dataSource: $dataSource,
-                    status: Cache::has($stopRequestedKey) ? 'cancelled' : 'success',
-                    projectId: $conversation->project_id,
-                    conversationId: (string) $conversation->id
-                );
+                    $payload = [
+                        'model' => $selectedModel,
+                        'messages' => $messages,
+                        'temperature' => 0.7,
+                    ];
+                    if ($toolsEnabled) {
+                        $payload['tools'] = $toolbox->definitions();
+                        $payload['tool_choice'] = 'auto';
+                    }
 
+                    $onChunk = function ($chunkText, $isDone, $usage) use (&$fullContent, &$turnText, &$reportedUsage, &$stopped, $stopRequestedKey, $send) {
+                        if (Cache::has($stopRequestedKey)) {
+                            $stopped = true;
+                            $send(['event' => 'stopped', 'message' => 'Generasi dibatalkan oleh pengguna.']);
+                            return false;
+                        }
+                        if ($usage) {
+                            $reportedUsage = $usage;
+                        }
+                        if (!$isDone && $chunkText !== '') {
+                            $turnText .= $chunkText;
+                            $fullContent .= $chunkText;
+                            $send(['content' => $chunkText]);
+                        }
+                        return true;
+                    };
+
+                    try {
+                        $result = $this->client->streamChatCompletion($payload, $onChunk);
+                    } catch (Exception $e) {
+                        // Model/provider without function calling: retry this step without tools
+                        if ($toolsEnabled && $turnText === '' && preg_match('/tool|function/i', $e->getMessage())) {
+                            $toolsEnabled = false;
+                            $step--;
+                            continue;
+                        }
+                        throw $e;
+                    }
+
+                    // Token accounting per model call (gateway formula: (prompt + completion) × multiplier)
+                    $pTokens = $reportedUsage['prompt_tokens'] ?? $this->accounting->estimateTokenCount(json_encode($messages));
+                    $cTokens = $reportedUsage['completion_tokens'] ?? $this->accounting->estimateTokenCount($turnText . json_encode($result['tool_calls'] ?? []));
+                    $usageActual = $usageActual && $reportedUsage !== null;
+                    $promptTotal += $pTokens;
+                    $completionTotal += $cTokens;
+
+                    $this->accounting->recordUsage(
+                        user: $user,
+                        model: $selectedModel,
+                        idempotencyKey: $idempotencyKey . '_s' . $step,
+                        promptTokens: $pTokens,
+                        completionTokens: $cTokens,
+                        dataSource: $reportedUsage ? 'actual' : 'estimated',
+                        status: $stopped ? 'cancelled' : 'success',
+                        projectId: $conversation->fresh()->project_id,
+                        conversationId: (string) $conversation->id
+                    );
+
+                    if ($stopped || $result['aborted'] || empty($result['tool_calls'])) {
+                        break;
+                    }
+
+                    // Run the tools the model asked for, then let it continue with the results
+                    $messages[] = [
+                        'role' => 'assistant',
+                        'content' => $turnText !== '' ? $turnText : null,
+                        'tool_calls' => $result['tool_calls'],
+                    ];
+
+                    foreach ($result['tool_calls'] as $call) {
+                        $name = $call['function']['name'];
+                        $args = json_decode($call['function']['arguments'] ?: '{}', true);
+                        if (!is_array($args)) {
+                            $args = [];
+                        }
+
+                        $label = $toolbox->describe($name, $args);
+                        $send(['event' => 'tool', 'status' => 'running', 'id' => $call['id'], 'label' => $label]);
+
+                        if (Cache::has($stopRequestedKey)) {
+                            $stopped = true;
+                            $toolResult = ['error' => 'Dibatalkan oleh pengguna.'];
+                        } else {
+                            $toolResult = $toolbox->execute($name, $args, $user, $conversation);
+                            $conversation->refresh();
+                        }
+
+                        $ok = !isset($toolResult['error']) || isset($toolResult['content']);
+                        $link = $toolResult['commit_url'] ?? $toolResult['url'] ?? null;
+                        $send([
+                            'event' => 'tool',
+                            'status' => $ok ? 'done' : 'error',
+                            'id' => $call['id'],
+                            'label' => $label,
+                            'link' => $link,
+                            'error' => $ok ? null : $toolResult['error'],
+                            'project_id' => $toolResult['project_id'] ?? null,
+                        ]);
+
+                        $activity[] = ($ok ? '✅ ' : '❌ ') . $label
+                            . ($link ? " → [" . (isset($toolResult['commit_sha']) ? 'commit ' . substr($toolResult['commit_sha'], 0, 7) : 'buka') . "]({$link})" : '')
+                            . ($ok ? '' : ': ' . mb_substr((string) $toolResult['error'], 0, 300));
+
+                        $messages[] = [
+                            'role' => 'tool',
+                            'tool_call_id' => $call['id'],
+                            'content' => $toolbox->encodeResult($toolResult),
+                        ];
+                    }
+
+                    if ($stopped) {
+                        break;
+                    }
+
+                    if ($fullContent !== '' && !str_ends_with($fullContent, "\n")) {
+                        $fullContent .= "\n\n";
+                        $send(['content' => "\n\n"]);
+                    }
+
+                    if ($step === $maxSteps) {
+                        $note = "\n\n_Batas langkah otomatis tercapai. Kirim \"lanjutkan\" untuk meneruskan._";
+                        $fullContent .= $note;
+                        $send(['content' => $note]);
+                    }
+                }
+
+                $send('[DONE]');
+
+                $activityBlock = empty($activity) ? '' :
+                    "<details><summary>🔧 Aksi GitHub & proyek (" . count($activity) . ")</summary>\n\n- "
+                    . implode("\n- ", $activity) . "\n\n</details>\n\n";
+
+                $assistantMsg->update([
+                    'content' => $activityBlock . $fullContent,
+                    'status' => $stopped ? 'cancelled' : 'completed',
+                    'prompt_tokens' => $usageActual ? $promptTotal : null,
+                    'completion_tokens' => $usageActual ? $completionTotal : null,
+                ]);
             } catch (Exception $e) {
                 $assistantMsg->update([
-                    'content' => $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage(),
+                    'content' => (empty($activity) ? '' : "- " . implode("\n- ", $activity) . "\n\n") . $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage(),
                     'status' => 'failed',
                 ]);
 
-                echo "data: " . json_encode(['error' => $e->getMessage()]) . "\n\n";
-                flush();
+                $send(['error' => $e->getMessage()]);
             } finally {
                 Cache::forget($stopRequestedKey);
             }
@@ -501,6 +609,30 @@ PROMPT;
         } catch (Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    /**
+     * Facts the model needs to use its tools: GitHub connection and linked project.
+     */
+    protected function runtimeContext(Conversation $conversation, $user): string
+    {
+        $conn = $user->githubConnection;
+        $lines = [];
+        $lines[] = ($conn && $conn->status === 'connected')
+            ? "GitHub: terhubung sebagai @{$conn->github_username}."
+            : 'GitHub: BELUM terhubung. Jika pengguna meminta operasi GitHub, minta ia menghubungkan Personal Access Token di menu Pengaturan & GitHub.';
+
+        if ($conversation->project_id) {
+            $project = Project::where('id', $conversation->project_id)->where('user_id', $user->id)->first();
+            if ($project) {
+                $lines[] = "Proyek terhubung: \"{$project->name}\" ({$project->files()->count()} berkas)"
+                    . ($project->github_repo ? ", target GitHub {$project->github_repo}:" . ($project->github_branch ?: 'main') : ', belum punya target GitHub') . '.';
+            }
+        } else {
+            $lines[] = 'Percakapan ini belum terhubung ke proyek XZY.';
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

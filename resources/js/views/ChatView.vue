@@ -143,10 +143,22 @@
             AI
           </div>
           <div class="p-4 rounded-2xl bg-slate-900 border border-violet-500/30 text-slate-200 text-xs sm:text-sm leading-relaxed max-w-2xl rounded-bl-none shadow-xl">
+            <ul v-if="toolActivity.length" class="mb-3 space-y-1 text-[11px] font-mono">
+              <li v-for="t in toolActivity" :key="t.id" class="flex items-start gap-2">
+                <span v-if="t.status === 'running'" class="mt-0.5 w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin shrink-0"></span>
+                <span v-else-if="t.status === 'done'" class="text-emerald-400 shrink-0">✓</span>
+                <span v-else class="text-rose-400 shrink-0">✕</span>
+                <span :class="t.status === 'error' ? 'text-rose-300' : 'text-slate-300'">
+                  {{ t.label }}
+                  <a v-if="t.link" :href="t.link" target="_blank" rel="noopener" class="text-cyan-400 underline ml-1">lihat</a>
+                  <span v-if="t.error" class="block text-rose-400/80">{{ t.error }}</span>
+                </span>
+              </li>
+            </ul>
             <div class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(streamingText)"></div>
             <div class="mt-2 flex items-center gap-2 text-[10px] text-cyan-400 font-mono">
               <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-              <span>Streaming token dari gateway TokenomixAI...</span>
+              <span>{{ toolActivity.some(t => t.status === 'running') ? 'Menjalankan aksi...' : 'Streaming token dari gateway TokenomixAI...' }}</span>
             </div>
           </div>
         </div>
@@ -216,6 +228,7 @@ const MODEL_STORAGE_KEY = 'xzy_chat_model';
 const { models, defaultModel, source: modelSource, load: loadModels, isAvailable: isKnownModel, label: modelLabel } = useModels();
 const selectedModel = ref('');
 const projects = ref<any[]>([]);
+const toolActivity = ref<{ id: string; label: string; status: string; link?: string | null; error?: string | null }[]>([]);
 const selectedProjectId = ref('');
 const pushModalOpen = ref(false);
 const pushFiles = ref<CodeFile[]>([]);
@@ -421,6 +434,7 @@ const sendMessage = async () => {
 
     isStreaming.value = true;
     streamingText.value = '';
+    toolActivity.value = [];
 
     try {
         const csrfToken = getCsrfToken();
@@ -473,6 +487,18 @@ const sendMessage = async () => {
                         }
                         if (parsed.content) {
                             streamingText.value += parsed.content;
+                            scrollToBottom();
+                        } else if (parsed.event === 'tool') {
+                            const existing = toolActivity.value.find(t => t.id === parsed.id);
+                            if (existing) {
+                                Object.assign(existing, parsed);
+                            } else {
+                                toolActivity.value.push(parsed);
+                            }
+                            if (parsed.project_id) {
+                                selectedProjectId.value = parsed.project_id;
+                                fetchProjects();
+                            }
                             scrollToBottom();
                         } else if (parsed.event === 'stopped') {
                             toast.info(parsed.message || 'Generasi dihentikan.');

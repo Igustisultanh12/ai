@@ -264,7 +264,18 @@ class GitHubService
             }
         }
 
-        if (empty($filesToPush)) {
+        $deletePaths = [];
+        foreach ((array) ($context['delete'] ?? []) as $path) {
+            $clean = $this->sanitizePath((string) $path);
+            if ($clean === null) {
+                throw new Exception("Path berkas yang akan dihapus tidak valid: {$path}");
+            }
+            if (!array_key_exists($clean, $filesToPush)) {
+                $deletePaths[] = $clean;
+            }
+        }
+
+        if (empty($filesToPush) && empty($deletePaths)) {
             throw new Exception("Tidak ada berkas yang dapat di-push.");
         }
 
@@ -321,6 +332,9 @@ class GitHubService
         // Empty repository: the Git Data API refuses blobs until a first commit exists.
         // Create that first commit with the Contents API, then continue normally.
         if ($repoEmpty) {
+            if (empty($filesToPush)) {
+                throw new Exception("Repositori {$repoFullName} masih kosong, tidak ada berkas yang bisa dihapus.");
+            }
             $firstPath = array_key_first($filesToPush);
             $initRes = $http()->put("{$api}/contents/" . $this->encodeRef($firstPath), [
                 'message' => $commitMessage,
@@ -369,6 +383,10 @@ class GitHubService
                 'type' => 'blob',
                 'sha' => $blobRes->json('sha'),
             ];
+        }
+
+        foreach ($deletePaths as $path) {
+            $treeItems[] = ['path' => $path, 'mode' => '100644', 'type' => 'blob', 'sha' => null];
         }
 
         // 5. Create tree
@@ -422,7 +440,8 @@ class GitHubService
             $newCommitSha,
             array_merge($pushedFirst ?? [], array_keys($filesToPush)),
             !$branchExists || $repoEmpty,
-            $context
+            $context,
+            $deletePaths
         );
     }
 
@@ -433,7 +452,8 @@ class GitHubService
         string $commitSha,
         array $paths,
         bool $branchCreated,
-        array $context
+        array $context,
+        array $deleted = []
     ): array {
         $this->audit->log('github.push', $user, $context['audit_type'] ?? 'GitHub', $context['audit_id'] ?? $repoFullName, [
             'repo' => $repoFullName,
@@ -452,8 +472,169 @@ class GitHubService
             'branch' => $branch,
             'branch_created' => $branchCreated,
             'files' => $paths,
-            'message' => "Berhasil push " . count($paths) . " berkas ke {$repoFullName}:{$branch}",
+            'deleted' => $deleted,
+            'message' => "Berhasil push " . count($paths) . " berkas" . ($deleted ? ", hapus " . count($deleted) . " berkas" : '') . " ke {$repoFullName}:{$branch}",
         ];
+    }
+
+    /**
+     * List every file in a repository branch (recursive git tree).
+     *
+     * @return array{repo: string, branch: string, files: array<int, array{path: string, size: int}>, truncated: bool, empty: bool}
+     */
+    public function getRepositoryTree(User $user, string $repo, ?string $branch = null, int $limit = 1000): array
+    {
+        [$repoFullName, $http] = $this->repoClient($user, $repo);
+        $api = "https://api.github.com/repos/{$repoFullName}";
+
+        if (!$branch) {
+            $branch = $this->defaultBranch($http, $repoFullName);
+        }
+
+        $res = $http()->get("{$api}/git/trees/" . rawurlencode($branch), ['recursive' => 1]);
+        if ($res->status() === 409) {
+            return ['repo' => $repoFullName, 'branch' => $branch, 'files' => [], 'truncated' => false, 'empty' => true];
+        }
+        if (!$res->successful()) {
+            throw new Exception("Gagal membaca isi {$repoFullName}@{$branch} (HTTP {$res->status()}): " . ($res->json('message') ?? $res->body()));
+        }
+
+        $files = [];
+        foreach ((array) $res->json('tree') as $entry) {
+            if (($entry['type'] ?? '') === 'blob') {
+                $files[] = ['path' => $entry['path'], 'size' => (int) ($entry['size'] ?? 0)];
+            }
+        }
+
+        $truncated = (bool) $res->json('truncated') || count($files) > $limit;
+
+        return [
+            'repo' => $repoFullName,
+            'branch' => $branch,
+            'files' => array_slice($files, 0, $limit),
+            'truncated' => $truncated,
+            'empty' => false,
+        ];
+    }
+
+    /**
+     * Read text files from a repository branch.
+     *
+     * @return array<string, array{content?: string, error?: string, size?: int}>
+     */
+    public function readRepositoryFiles(User $user, string $repo, array $paths, ?string $branch = null, int $maxBytesPerFile = 150000): array
+    {
+        [$repoFullName, $http] = $this->repoClient($user, $repo);
+        $api = "https://api.github.com/repos/{$repoFullName}";
+
+        $out = [];
+        foreach (array_slice(array_values(array_unique($paths)), 0, 30) as $path) {
+            $clean = $this->sanitizePath((string) $path);
+            if ($clean === null) {
+                $out[(string) $path] = ['error' => 'Path tidak valid'];
+                continue;
+            }
+
+            $query = $branch ? ['ref' => $branch] : [];
+            $res = $http()->withHeaders(['Accept' => 'application/vnd.github.raw+json'])
+                ->get("{$api}/contents/" . $this->encodeRef($clean), $query);
+
+            if (!$res->successful()) {
+                $out[$clean] = ['error' => "HTTP {$res->status()}: " . ($res->json('message') ?? 'tidak dapat dibaca')];
+                continue;
+            }
+
+            $body = $res->body();
+            if (str_contains(substr($body, 0, 8000), "\0")) {
+                $out[$clean] = ['error' => 'Berkas biner, tidak ditampilkan', 'size' => strlen($body)];
+                continue;
+            }
+            if (strlen($body) > $maxBytesPerFile) {
+                $out[$clean] = [
+                    'content' => substr($body, 0, $maxBytesPerFile),
+                    'size' => strlen($body),
+                    'error' => 'Berkas terpotong karena terlalu besar',
+                ];
+                continue;
+            }
+
+            $out[$clean] = ['content' => $body, 'size' => strlen($body)];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Create a repository for the authenticated user.
+     */
+    public function createRepository(User $user, string $name, bool $private = true, ?string $description = null): array
+    {
+        $token = $this->getUserToken($user);
+        $name = trim($name);
+        if (!preg_match('/^[A-Za-z0-9_.-]{1,100}$/', $name)) {
+            throw new Exception("Nama repositori tidak valid: {$name}");
+        }
+
+        $res = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept' => 'application/vnd.github+json',
+            'X-GitHub-Api-Version' => '2022-11-28',
+            'User-Agent' => 'XZY-Platform',
+        ])->timeout(30)->post('https://api.github.com/user/repos', array_filter([
+            'name' => $name,
+            'private' => $private,
+            'description' => $description,
+            'auto_init' => true,
+        ], fn ($v) => $v !== null));
+
+        if (!$res->successful()) {
+            $msg = $res->json('errors.0.message') ?? $res->json('message') ?? $res->body();
+            if ($res->status() === 403) {
+                $msg .= ' (token perlu izin membuat repo: scope "repo" untuk classic token, atau "Administration: Read and write" untuk fine-grained token)';
+            }
+            throw new Exception("Gagal membuat repositori {$name} (HTTP {$res->status()}): {$msg}");
+        }
+
+        $this->audit->log('github.repo_created', $user, 'GitHub', (string) $res->json('full_name'), [
+            'private' => $private,
+        ]);
+
+        return [
+            'repo' => $res->json('full_name'),
+            'url' => $res->json('html_url'),
+            'default_branch' => $res->json('default_branch') ?: 'main',
+            'private' => (bool) $res->json('private'),
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: \Closure}
+     */
+    protected function repoClient(User $user, string $repo): array
+    {
+        $token = $this->getUserToken($user);
+        $repoFullName = $this->normalizeRepo($repo);
+        if ($repoFullName === null) {
+            throw new Exception("Repositori tidak valid: {$repo}. Gunakan link https://github.com/pemilik/nama-repo atau pemilik/nama-repo.");
+        }
+
+        $http = fn () => Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept' => 'application/vnd.github+json',
+            'X-GitHub-Api-Version' => '2022-11-28',
+            'User-Agent' => 'XZY-Platform',
+        ])->timeout(30);
+
+        return [$repoFullName, $http];
+    }
+
+    protected function defaultBranch(\Closure $http, string $repoFullName): string
+    {
+        $res = $http()->get("https://api.github.com/repos/{$repoFullName}");
+        if (!$res->successful()) {
+            throw new Exception("Repositori {$repoFullName} tidak ditemukan atau token GitHub Anda tidak punya akses (HTTP {$res->status()}).");
+        }
+        return $res->json('default_branch') ?: 'main';
     }
 
     /**
