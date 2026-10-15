@@ -110,6 +110,7 @@ class ChatModelAndGitHubPushTest extends TestCase
             'api.github.com/repos/octo/app/git/trees' => Http::response(['sha' => 'newtree'], 201),
             'api.github.com/repos/octo/app/git/commits' => Http::response(['sha' => 'newcommit'], 201),
             'api.github.com/repos/octo/app/git/refs/heads/main' => Http::response(['object' => ['sha' => 'newcommit']]),
+            'api.github.com/repos/octo/app' => Http::response(['default_branch' => 'main', 'permissions' => ['push' => true]]),
         ]);
 
         $res = $this->actingAs($user)->postJson("/api/conversations/{$conv->id}/github/push", [

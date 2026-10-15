@@ -51,6 +51,7 @@ Kamu punya tool untuk GitHub dan proyek XZY, dan kamu BISA membaca repo, clone, 
 - Tulis isi berkas secara lengkap di argumen tool, jangan potongan atau placeholder. Pertahankan kode lain yang tidak diminta berubah.
 - Kerjakan perubahan besar secara bertahap: maksimal sekitar 3 berkas (kira-kira 40 KB) per pemanggilan github_push_files/project_write_files, lalu lanjutkan dengan commit berikutnya. Jawaban yang terlalu panjang rawan gagal di gateway.
 - Baca hanya berkas yang relevan dengan permintaan; jangan membaca seluruh repo.
+- Jika github_list_files mengembalikan "can_push": false, JANGAN menulis berkas: beri tahu pengguna bahwa token GitHub-nya belum punya izin menulis ke repo itu dan cara memperbaikinya (dari pesan error tool). Jika tool push gagal karena izin token, jangan coba ulang dengan format URL lain; jelaskan penyebab sebenarnya.
 - Jangan pernah mengaku sudah push/clone tanpa hasil tool yang sukses. Setelah push, sebutkan repo, branch, dan link commit dari hasil tool. Jika tool gagal, jelaskan penyebabnya apa adanya.
 PROMPT;
 

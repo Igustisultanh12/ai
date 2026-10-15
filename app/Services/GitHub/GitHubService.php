@@ -293,6 +293,16 @@ class GitHubService
             'User-Agent' => 'XZY-Platform',
         ])->timeout(30);
 
+        // Check write access up front: GitHub answers 404 (not 403) on write endpoints
+        // when the token may read a repo but not push to it.
+        $repoInfo = $http()->get($api);
+        if ($repoInfo->status() === 404 || $repoInfo->status() === 403) {
+            throw new Exception($this->accessError($repoFullName, $repoInfo->status(), false));
+        }
+        if ($repoInfo->successful() && $repoInfo->json('permissions.push') === false) {
+            throw new Exception($this->accessError($repoFullName, 403, true));
+        }
+
         // 3. Resolve parent commit: target branch, else the repo default branch
         $parentCommitSha = null;
         $baseTreeSha = null;
@@ -342,6 +352,9 @@ class GitHubService
                 'branch' => $branch,
             ]);
 
+            if (in_array($initRes->status(), [403, 404], true)) {
+                throw new Exception($this->accessError($repoFullName, $initRes->status(), true));
+            }
             if (!$initRes->successful()) {
                 throw new Exception("Gagal membuat commit awal di repositori kosong {$repoFullName} (HTTP {$initRes->status()}): " . ($initRes->json('message') ?? $initRes->body()));
             }
@@ -372,6 +385,9 @@ class GitHubService
                 'encoding' => 'base64',
             ]);
 
+            if (in_array($blobRes->status(), [403, 404], true)) {
+                throw new Exception($this->accessError($repoFullName, $blobRes->status(), true));
+            }
             if (!$blobRes->successful()) {
                 $hint = $blobRes->status() === 409 ? ' Repositori masih kosong: buat commit awal (mis. README) di GitHub terlebih dahulu.' : '';
                 throw new Exception("Gagal mengunggah berkas {$path} ke GitHub (HTTP {$blobRes->status()}): " . ($blobRes->json('message') ?? $blobRes->body()) . $hint);
@@ -425,6 +441,9 @@ class GitHubService
             ]);
         }
 
+        if (in_array($updateRefRes->status(), [403, 404], true) && !str_contains((string) $updateRefRes->json('message'), 'fast')) {
+            throw new Exception($this->accessError($repoFullName, $updateRefRes->status(), true));
+        }
         if (!$updateRefRes->successful()) {
             $errorBody = (string) ($updateRefRes->json('message') ?? $updateRefRes->body());
             if (stripos($errorBody, 'fast forward') !== false || stripos($errorBody, 'fast-forward') !== false || $updateRefRes->status() === 409) {
@@ -487,13 +506,18 @@ class GitHubService
         [$repoFullName, $http] = $this->repoClient($user, $repo);
         $api = "https://api.github.com/repos/{$repoFullName}";
 
+        $repoInfo = $http()->get($api);
+        if (!$repoInfo->successful()) {
+            throw new Exception($this->accessError($repoFullName, $repoInfo->status(), false));
+        }
+        $canPush = $repoInfo->json('permissions.push');
         if (!$branch) {
-            $branch = $this->defaultBranch($http, $repoFullName);
+            $branch = $repoInfo->json('default_branch') ?: 'main';
         }
 
         $res = $http()->get("{$api}/git/trees/" . rawurlencode($branch), ['recursive' => 1]);
         if ($res->status() === 409) {
-            return ['repo' => $repoFullName, 'branch' => $branch, 'files' => [], 'truncated' => false, 'empty' => true];
+            return ['repo' => $repoFullName, 'branch' => $branch, 'can_push' => $canPush, 'files' => [], 'truncated' => false, 'empty' => true];
         }
         if (!$res->successful()) {
             throw new Exception("Gagal membaca isi {$repoFullName}@{$branch} (HTTP {$res->status()}): " . ($res->json('message') ?? $res->body()));
@@ -511,6 +535,8 @@ class GitHubService
         return [
             'repo' => $repoFullName,
             'branch' => $branch,
+            // false = the connected token cannot push here; tell the user before writing files
+            'can_push' => $canPush,
             'files' => array_slice($files, 0, $limit),
             'truncated' => $truncated,
             'empty' => false,
@@ -635,6 +661,20 @@ class GitHubService
             throw new Exception("Repositori {$repoFullName} tidak ditemukan atau token GitHub Anda tidak punya akses (HTTP {$res->status()}).");
         }
         return $res->json('default_branch') ?: 'main';
+    }
+
+    /**
+     * Actionable message when the connected token cannot read or write a repository.
+     */
+    public function accessError(string $repoFullName, int $status, bool $canRead): string
+    {
+        $what = $canRead
+            ? "Token GitHub yang terhubung bisa membaca {$repoFullName} tetapi TIDAK punya izin menulis/push (HTTP {$status})."
+            : "Repositori {$repoFullName} tidak ditemukan atau token GitHub yang terhubung tidak punya akses (HTTP {$status}).";
+
+        return $what . ' Perbaiki di GitHub: fine-grained token -> Repository access harus mencakup ' . $repoFullName
+            . ' dan Permissions -> Contents: Read and write; classic token -> centang scope "repo". '
+            . 'Lalu hubungkan ulang token di menu Pengaturan & GitHub. Ini masalah izin token, bukan format URL.';
     }
 
     /**
