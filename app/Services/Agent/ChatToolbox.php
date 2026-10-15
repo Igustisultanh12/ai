@@ -17,7 +17,8 @@ use Throwable;
  */
 class ChatToolbox
 {
-    public const MAX_RESULT_CHARS = 60000;
+    public const MAX_RESULT_CHARS = 40000;
+    public const OLD_RESULT_CHARS = 2500;
 
     public function __construct(
         protected GitHubService $github,
@@ -166,6 +167,51 @@ class ChatToolbox
             $json = substr($json, 0, self::MAX_RESULT_CHARS) . '... [hasil dipotong karena terlalu panjang; baca lebih sedikit berkas per panggilan]';
         }
         return $json;
+    }
+
+    /**
+     * Shrink tool results the model has already used (all but the most recent ones),
+     * so each further step does not resend whole files again (saves quota).
+     */
+    public function compactHistory(array $messages, int $keepRecent = 3): array
+    {
+        $toolIdx = [];
+        foreach ($messages as $i => $m) {
+            if (($m['role'] ?? '') === 'tool') {
+                $toolIdx[] = $i;
+            }
+        }
+        foreach (array_slice($toolIdx, 0, max(0, count($toolIdx) - $keepRecent)) as $i) {
+            $content = (string) $messages[$i]['content'];
+            if (strlen($content) > self::OLD_RESULT_CHARS) {
+                $messages[$i]['content'] = substr($content, 0, self::OLD_RESULT_CHARS)
+                    . '... [hasil lama diringkas untuk menghemat token; panggil tool lagi bila butuh isi lengkap]';
+            }
+        }
+        // Old assistant tool-call arguments (full file contents) are not needed verbatim either
+        $assistantIdx = [];
+        foreach ($messages as $i => $m) {
+            if (($m['role'] ?? '') === 'assistant' && !empty($m['tool_calls'])) {
+                $assistantIdx[] = $i;
+            }
+        }
+        foreach (array_slice($assistantIdx, 0, max(0, count($assistantIdx) - 1)) as $i) {
+            foreach ($messages[$i]['tool_calls'] as $k => $call) {
+                $args = (string) ($call['function']['arguments'] ?? '');
+                if (strlen($args) > self::OLD_RESULT_CHARS) {
+                    $decoded = json_decode($args, true);
+                    if (is_array($decoded) && isset($decoded['files']) && is_array($decoded['files'])) {
+                        foreach ($decoded['files'] as $f => $file) {
+                            if (is_array($file) && isset($file['content'])) {
+                                $decoded['files'][$f]['content'] = '[isi berkas sudah dikirim, ' . strlen((string) $file['content']) . ' byte]';
+                            }
+                        }
+                        $messages[$i]['tool_calls'][$k]['function']['arguments'] = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    }
+                }
+            }
+        }
+        return $messages;
     }
 
     protected function filesArg(array $args): array

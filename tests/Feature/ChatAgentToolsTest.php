@@ -29,7 +29,7 @@ class ScriptedTokenomixClient extends TokenomixClient
         return true;
     }
 
-    public function streamChatCompletion(array $payload, callable $callback): array
+    public function streamChatCompletion(array $payload, callable $callback, ?callable $onTick = null): array
     {
         $this->calls[] = $payload;
         $turn = array_shift($this->turns) ?? ['text' => ''];

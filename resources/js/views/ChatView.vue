@@ -158,7 +158,7 @@
             <div class="whitespace-pre-wrap font-sans" v-html="renderMarkdown(streamingText)"></div>
             <div class="mt-2 flex items-center gap-2 text-[10px] text-cyan-400 font-mono">
               <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-              <span>{{ toolActivity.some(t => t.status === 'running') ? 'Menjalankan aksi...' : 'Streaming token dari gateway TokenomixAI...' }}</span>
+              <span>{{ writingProgress || (isWaitingServer ? 'Menunggu hasil dari server...' : toolActivity.some(t => t.status === 'running') ? 'Menjalankan aksi...' : 'Streaming token dari gateway TokenomixAI...') }}</span>
             </div>
           </div>
         </div>
@@ -228,6 +228,7 @@ const MODEL_STORAGE_KEY = 'xzy_chat_model';
 const { models, defaultModel, source: modelSource, load: loadModels, isAvailable: isKnownModel, label: modelLabel } = useModels();
 const selectedModel = ref('');
 const projects = ref<any[]>([]);
+const writingProgress = ref('');
 const toolActivity = ref<{ id: string; label: string; status: string; link?: string | null; error?: string | null }[]>([]);
 const selectedProjectId = ref('');
 const pushModalOpen = ref(false);
@@ -385,6 +386,12 @@ const selectConversation = async (id: string) => {
         }
         selectedProjectId.value = res.conversation.project_id || '';
         scrollToBottom();
+
+        const last = [...messages.value].reverse().find((m: any) => m.role === 'assistant');
+        const ageMs = last ? Date.now() - new Date(last.updated_at || last.created_at).getTime() : Infinity;
+        if (last && last.status === 'streaming' && !isStreaming.value && ageMs < 20 * 60 * 1000) {
+            waitForServerResult(id);
+        }
     } catch (e: any) {
         toast.error('Gagal memuat pesan: ' + e.message);
     }
@@ -435,6 +442,7 @@ const sendMessage = async () => {
     isStreaming.value = true;
     streamingText.value = '';
     toolActivity.value = [];
+    writingProgress.value = '';
 
     try {
         const csrfToken = getCsrfToken();
@@ -493,6 +501,7 @@ const sendMessage = async () => {
                             streamingText.value += parsed.content;
                             scrollToBottom();
                         } else if (parsed.event === 'tool') {
+                            writingProgress.value = '';
                             const existing = toolActivity.value.find(t => t.id === parsed.id);
                             if (existing) {
                                 Object.assign(existing, parsed);
@@ -503,6 +512,11 @@ const sendMessage = async () => {
                                 selectedProjectId.value = parsed.project_id;
                                 fetchProjects();
                             }
+                            scrollToBottom();
+                        } else if (parsed.event === 'progress') {
+                            writingProgress.value = parsed.chars > 0
+                                ? `AI sedang menulis berkas... ${(parsed.chars / 1024).toFixed(1)} KB`
+                                : '';
                             scrollToBottom();
                         } else if (parsed.event === 'stopped') {
                             toast.info(parsed.message || 'Generasi dihentikan.');
@@ -545,6 +559,13 @@ const sendMessage = async () => {
             // keep local copy
         }
     } catch (e: any) {
+        const networkDrop = e instanceof TypeError || /network|fetch|load failed|aborted/i.test(e?.message || '');
+        if (networkDrop) {
+            // The server keeps working after the browser connection drops: wait for its result
+            toast.info('Koneksi terputus, AI masih bekerja di server. Menunggu hasilnya...');
+            await waitForServerResult(convId);
+            return;
+        }
         toast.error('Gagal mengirim pesan: ' + e.message);
         messages.value.push({
             tempId: Date.now() + 1,
@@ -552,6 +573,57 @@ const sendMessage = async () => {
             content: `[Gagal menerima respons AI]: ${e.message}`,
         });
     } finally {
+        if (!isWaitingServer.value) {
+            isStreaming.value = false;
+        }
+        scrollToBottom();
+    }
+};
+
+const isWaitingServer = ref(false);
+
+/**
+ * Poll the conversation until the assistant message that is still being produced
+ * on the server is finished, showing its saved progress meanwhile.
+ */
+const waitForServerResult = async (convId: string) => {
+    if (isWaitingServer.value) return;
+    isWaitingServer.value = true;
+    isStreaming.value = true;
+    toolActivity.value = [];
+    const deadline = Date.now() + 20 * 60 * 1000;
+
+    try {
+        while (Date.now() < deadline && activeConvId.value === convId) {
+            let fresh: any;
+            try {
+                fresh = await api.get(`/api/conversations/${convId}`);
+            } catch {
+                await new Promise(r => setTimeout(r, 5000));
+                continue;
+            }
+            const list = fresh.conversation.messages || [];
+            const last = [...list].reverse().find((m: any) => m.role === 'assistant');
+
+            if (last && last.status === 'streaming') {
+                streamingText.value = (last.content || '') + '\n\n_Koneksi sempat terputus. AI masih bekerja di server, hasil akan muncul otomatis..._';
+                messages.value = list.filter((m: any) => m.id !== last.id);
+                scrollToBottom();
+                await new Promise(r => setTimeout(r, 4000));
+                continue;
+            }
+
+            activeConv.value = fresh.conversation;
+            messages.value = list;
+            selectedProjectId.value = fresh.conversation.project_id || '';
+            break;
+        }
+        if (Date.now() >= deadline) {
+            toast.warning('AI belum selesai setelah 20 menit. Buka lagi percakapan ini nanti untuk melihat hasilnya.');
+        }
+    } finally {
+        streamingText.value = '';
+        isWaitingServer.value = false;
         isStreaming.value = false;
         scrollToBottom();
     }

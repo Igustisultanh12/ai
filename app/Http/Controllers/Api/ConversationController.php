@@ -18,7 +18,9 @@ use App\Services\Usage\TokenAccountingService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Client\Events\ResponseReceived;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -290,9 +292,33 @@ PROMPT;
                 ob_end_clean();
             }
 
-            $send = function (array|string $data) {
+            $lastOutput = microtime(true);
+            $send = function (array|string $data) use (&$lastOutput) {
                 echo 'data: ' . (is_string($data) ? $data : json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . "\n\n";
                 flush();
+                $lastOutput = microtime(true);
+            };
+
+            // Keep proxies (Cloudflare ~100s, nginx/PHP-FPM ~60s) from closing a quiet stream:
+            // an SSE comment line is ignored by the browser but counts as traffic.
+            $heartbeat = function () use (&$lastOutput) {
+                if (microtime(true) - $lastOutput >= 5) {
+                    echo ": ping\n\n";
+                    flush();
+                    $lastOutput = microtime(true);
+                }
+            };
+            // Every GitHub API response during tool execution also ticks the heartbeat
+            Event::listen(ResponseReceived::class, fn () => $heartbeat());
+
+            $lastProgress = 0.0;
+            $onTick = function (int $toolChars, ?string $toolName) use (&$lastProgress, $heartbeat, $send) {
+                if ($toolChars > 0 && microtime(true) - $lastProgress >= 2) {
+                    $lastProgress = microtime(true);
+                    $send(['event' => 'progress', 'tool' => $toolName, 'chars' => $toolChars]);
+                    return;
+                }
+                $heartbeat();
             };
 
             $fullContent = '';
@@ -318,6 +344,7 @@ PROMPT;
                     $turnText = '';
                     $reportedUsage = null;
 
+                    $messages = $toolbox->compactHistory($messages);
                     $payload = [
                         'model' => $selectedModel,
                         'messages' => $messages,
@@ -346,7 +373,7 @@ PROMPT;
                     };
 
                     try {
-                        $result = $this->client->streamChatCompletion($payload, $onChunk);
+                        $result = $this->client->streamChatCompletion($payload, $onChunk, $onTick);
                     } catch (Exception $e) {
                         // Model/provider without function calling: retry this step without tools
                         if ($toolsEnabled && $turnText === '' && preg_match('/tool|function/i', $e->getMessage())) {
@@ -428,6 +455,9 @@ PROMPT;
                         ];
                     }
 
+                    // Save progress so a dropped browser connection can pick up the work later
+                    $assistantMsg->update(['content' => $this->activityBlock($activity) . $fullContent]);
+
                     if ($stopped) {
                         break;
                     }
@@ -446,19 +476,15 @@ PROMPT;
 
                 $send('[DONE]');
 
-                $activityBlock = empty($activity) ? '' :
-                    "<details><summary>🔧 Aksi GitHub & proyek (" . count($activity) . ")</summary>\n\n- "
-                    . implode("\n- ", $activity) . "\n\n</details>\n\n";
-
                 $assistantMsg->update([
-                    'content' => $activityBlock . $fullContent,
+                    'content' => $this->activityBlock($activity) . $fullContent,
                     'status' => $stopped ? 'cancelled' : 'completed',
                     'prompt_tokens' => $usageActual ? $promptTotal : null,
                     'completion_tokens' => $usageActual ? $completionTotal : null,
                 ]);
             } catch (Exception $e) {
                 $assistantMsg->update([
-                    'content' => (empty($activity) ? '' : "- " . implode("\n- ", $activity) . "\n\n") . $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage(),
+                    'content' => $this->activityBlock($activity) . $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage(),
                     'status' => 'failed',
                 ]);
 
@@ -609,6 +635,13 @@ PROMPT;
         } catch (Exception $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    protected function activityBlock(array $activity): string
+    {
+        return empty($activity) ? '' :
+            "<details><summary>🔧 Aksi GitHub & proyek (" . count($activity) . ")</summary>\n\n- "
+            . implode("\n- ", $activity) . "\n\n</details>\n\n";
     }
 
     /**

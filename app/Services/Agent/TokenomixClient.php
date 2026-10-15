@@ -197,10 +197,13 @@ class TokenomixClient
      * Invokes $callback($chunkText, $isDone, $usageData) for each incoming event.
      * Returning false from the callback aborts the upstream request (used for "stop").
      * Returns the assembled tool calls (OpenAI format) and finish reason of the turn.
+     * $onTick(int $toolArgChars, ?string $toolName) is called often while the transfer is
+     * alive (also when the model is silent or streaming tool arguments), so the caller can
+     * keep its own connection to the browser from looking idle.
      *
      * @return array{tool_calls: array, finish_reason: ?string, aborted: bool}
      */
-    public function streamChatCompletion(array $payload, callable $callback): array
+    public function streamChatCompletion(array $payload, callable $callback, ?callable $onTick = null): array
     {
         if (!$this->isConfigured()) {
             throw new Exception('TokenomixAI API Key belum dikonfigurasi.');
@@ -220,7 +223,11 @@ class TokenomixClient
         ]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_TIMEOUT, max(90, $this->config?->timeout_seconds ?: 90) * 3);
+        // No hard total limit (long answers / big files can take minutes); abort only when the
+        // upstream sends nothing at all for 3 minutes.
+        curl_setopt($ch, CURLOPT_TIMEOUT, 0);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 180);
 
         $buffer = '';
         $rawBody = '';
@@ -230,6 +237,20 @@ class TokenomixClient
         $retryAfter = null;
         $toolCalls = [];
         $finishReason = null;
+
+        if ($onTick) {
+            curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+            curl_setopt($ch, CURLOPT_XFERINFOFUNCTION, function () use (&$toolCalls, $onTick) {
+                $chars = 0;
+                $name = null;
+                foreach ($toolCalls as $t) {
+                    $chars += strlen($t['function']['arguments']);
+                    $name = $t['function']['name'] ?: $name;
+                }
+                $onTick($chars, $name);
+                return 0; // keep going
+            });
+        }
 
         curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curlHandle, $header) use (&$retryAfter) {
             if (stripos($header, 'Retry-After:') === 0) {
