@@ -238,9 +238,9 @@ class GitHubService
             throw new Exception("Nama branch tidak valid: {$branch}");
         }
 
-        // Prevent pointing user content to XZY app's own source repository
-        if (strtolower($repoFullName) === 'igustisultanh12/ai') {
-            throw new Exception("Repositori sistem XZY tidak dapat digunakan sebagai target push. Harap pilih repositori GitHub pribadi Anda.");
+        // The XZY app's own source repository is reserved for administrators
+        if (strtolower($repoFullName) === 'igustisultanh12/ai' && !$user->isAdmin()) {
+            throw new Exception("Repositori sistem XZY hanya dapat menjadi target push oleh administrator. Harap pilih repositori GitHub pribadi Anda.");
         }
 
         // 1. Normalise paths and drop ignored files
