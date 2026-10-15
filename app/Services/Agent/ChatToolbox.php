@@ -128,6 +128,15 @@ class ChatToolbox
      */
     public function execute(string $name, array $args, User $user, Conversation $conversation): array
     {
+        $writes = ['github_push_files', 'project_write_files'];
+        if (in_array($name, $writes, true) && empty($args['files']) && empty($args['delete_paths'])) {
+            return ['error' => 'Argumen kosong: daftar files tidak terkirim (biasanya karena jawaban terlalu panjang lalu terpotong). '
+                . 'Kirim ulang dengan 1-2 berkas per panggilan, sertakan repo, commit_message, dan files[{path, content}].'];
+        }
+        if (str_starts_with($name, 'github_') && $name !== 'github_list_repos' && $name !== 'github_create_repo' && empty($args['repo'])) {
+            return ['error' => 'Argumen "repo" kosong. Sertakan repo, misalnya "Igustisultanh12/ai" atau link GitHub-nya.'];
+        }
+
         try {
             return match ($name) {
                 'github_list_repos' => ['repos' => array_map(

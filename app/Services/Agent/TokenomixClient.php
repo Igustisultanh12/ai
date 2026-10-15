@@ -236,19 +236,13 @@ class TokenomixClient
         $aborted = false;
         $done = false;
         $retryAfter = null;
-        $toolCalls = [];
+        $toolCalls = new ToolCallAccumulator();
         $finishReason = null;
 
         if ($onTick) {
             curl_setopt($ch, CURLOPT_NOPROGRESS, false);
-            curl_setopt($ch, CURLOPT_XFERINFOFUNCTION, function () use (&$toolCalls, $onTick) {
-                $chars = 0;
-                $name = null;
-                foreach ($toolCalls as $t) {
-                    $chars += strlen($t['function']['arguments']);
-                    $name = $t['function']['name'] ?: $name;
-                }
-                $onTick($chars, $name);
+            curl_setopt($ch, CURLOPT_XFERINFOFUNCTION, function () use ($toolCalls, $onTick) {
+                $onTick($toolCalls->argumentChars(), $toolCalls->lastName());
                 return 0; // keep going
             });
         }
@@ -260,7 +254,7 @@ class TokenomixClient
             return strlen($header);
         });
 
-        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (&$buffer, &$rawBody, &$streamStarted, &$aborted, &$done, &$toolCalls, &$finishReason, $callback) {
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (&$buffer, &$rawBody, &$streamStarted, &$aborted, &$done, $toolCalls, &$finishReason, $callback) {
             $httpCode = curl_getinfo($curlHandle, CURLINFO_HTTP_CODE);
             if ($httpCode >= 400) {
                 // Error responses are plain JSON, keep them for the error message.
@@ -301,22 +295,10 @@ class TokenomixClient
 
                 $streamStarted = true;
 
-                // Assemble streamed tool calls: pieces arrive per index
-                foreach (($decoded['choices'][0]['delta']['tool_calls'] ?? []) as $tc) {
-                    $i = $tc['index'] ?? count($toolCalls);
-                    $toolCalls[$i] ??= ['id' => '', 'type' => 'function', 'function' => ['name' => '', 'arguments' => '']];
-                    if (!empty($tc['id'])) {
-                        $toolCalls[$i]['id'] = $tc['id'];
-                    }
-                    if (isset($tc['function']['name'])) {
-                        $toolCalls[$i]['function']['name'] .= $tc['function']['name'];
-                    }
-                    if (isset($tc['function']['arguments'])) {
-                        $toolCalls[$i]['function']['arguments'] .= is_string($tc['function']['arguments'])
-                            ? $tc['function']['arguments']
-                            : json_encode($tc['function']['arguments']);
-                    }
-                }
+                // Assemble streamed tool calls (delta form, or a full message at the end)
+                $toolCalls->add((array) ($decoded['choices'][0]['delta']['tool_calls']
+                    ?? $decoded['choices'][0]['message']['tool_calls']
+                    ?? []));
                 if (!empty($decoded['choices'][0]['finish_reason'])) {
                     $finishReason = $decoded['choices'][0]['finish_reason'];
                 }
@@ -379,16 +361,7 @@ class TokenomixClient
             $callback('', true, null);
         }
 
-        ksort($toolCalls);
-        $toolCalls = array_values(array_filter($toolCalls, fn ($t) => $t['function']['name'] !== ''));
-        foreach ($toolCalls as $n => &$t) {
-            if ($t['id'] === '') {
-                $t['id'] = 'call_' . $n . '_' . bin2hex(random_bytes(4));
-            }
-        }
-        unset($t);
-
-        return ['tool_calls' => $toolCalls, 'finish_reason' => $finishReason, 'aborted' => false];
+        return ['tool_calls' => $toolCalls->calls(), 'finish_reason' => $finishReason, 'aborted' => false];
     }
 
     /**

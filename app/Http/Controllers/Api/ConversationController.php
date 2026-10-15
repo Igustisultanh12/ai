@@ -335,6 +335,7 @@ PROMPT;
             $stopped = false;
             $messages = $messagesHistory;
             $maxSteps = 15;
+            $maxTokens = (int) config('services.tokenomix.chat_max_tokens', 16384) ?: null;
 
             try {
                 $send([
@@ -355,6 +356,11 @@ PROMPT;
                         'messages' => $messages,
                         'temperature' => 0.7,
                     ];
+                    // Without an explicit limit some providers stop at ~4k output tokens, which cuts
+                    // a tool call that writes whole files in half (arguments arrive empty).
+                    if ($maxTokens) {
+                        $payload['max_tokens'] = $maxTokens;
+                    }
                     if ($toolsEnabled) {
                         $payload['tools'] = $toolbox->definitions();
                         $payload['tool_choice'] = 'auto';
@@ -413,6 +419,13 @@ PROMPT;
                                 break;
                             }
                         } catch (Exception $e) {
+                            // Model rejects the requested output size: retry with the provider default
+                            if ($maxTokens && $turnText === '' && preg_match('/max_tokens|max_completion_tokens|output tokens|maximum.*tokens/i', $e->getMessage())) {
+                                $maxTokens = null;
+                                unset($payload['max_tokens']);
+                                $attempt--;
+                                continue;
+                            }
                             // Model/provider without function calling: retry this step without tools
                             if ($toolsEnabled && $turnText === '' && preg_match('/tool|function/i', $e->getMessage())) {
                                 $toolsEnabled = false;
@@ -469,7 +482,9 @@ PROMPT;
                         $label = $toolbox->describe($name, $args);
                         $send(['event' => 'tool', 'status' => 'running', 'id' => $call['id'], 'label' => $label]);
 
-                        if ($badArgs) {
+                        if (($result['finish_reason'] ?? null) === 'length') {
+                            $toolResult = ['error' => 'Jawabanmu terpotong karena batas panjang output, jadi tool ini TIDAK dijalankan. Bagi pekerjaan: tulis 1-2 berkas per panggilan tool.'];
+                        } elseif ($badArgs) {
                             $toolResult = ['error' => 'Argumen tool tidak valid atau terpotong (kemungkinan terlalu panjang). Kirim lebih sedikit berkas per panggilan, lalu coba lagi.'];
                         } elseif (Cache::has($stopRequestedKey)) {
                             $stopped = true;
@@ -544,7 +559,7 @@ PROMPT;
             }
         }, 200, [
             'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache',
+            'Cache-Control' => 'no-cache, no-transform',
             'X-Accel-Buffering' => 'no',
         ]);
     }
@@ -583,7 +598,7 @@ PROMPT;
             flush();
         }, 200, [
             'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache',
+            'Cache-Control' => 'no-cache, no-transform',
             'X-Accel-Buffering' => 'no',
         ]);
     }

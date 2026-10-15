@@ -38,6 +38,8 @@ return [
         'api_key' => env('TOKENOMIXAI_API_KEY'),
         // First retry delay (seconds) for 502/429/dropped connections; doubles each attempt
         'retry_base_seconds' => (int) env('TOKENOMIXAI_RETRY_BASE_SECONDS', 2),
+        // Output token limit for chat/agent replies (0 = provider default)
+        'chat_max_tokens' => (int) env('TOKENOMIXAI_CHAT_MAX_TOKENS', 16384),
     ],
 
     'rar' => [

@@ -52,7 +52,7 @@ class ScriptedTokenomixClient extends TokenomixClient
             $toolCalls[] = ['id' => "call_{$i}", 'type' => 'function', 'function' => ['name' => $name, 'arguments' => json_encode($args)]];
         }
 
-        return ['tool_calls' => $toolCalls, 'finish_reason' => $toolCalls ? 'tool_calls' : 'stop', 'aborted' => false];
+        return ['tool_calls' => $toolCalls, 'finish_reason' => $turn['finish'] ?? ($toolCalls ? 'tool_calls' : 'stop'), 'aborted' => false];
     }
 }
 
@@ -234,5 +234,30 @@ class ChatAgentToolsTest extends TestCase
         $this->assertStringContainsString('Melihat isi repo budi/web', $reply->content);
         $this->assertStringContainsString('502 upstream_unavailable', $reply->content);
         $this->assertCount(5, $client->calls);
+    }
+
+    public function test_truncated_tool_call_is_not_executed_and_max_tokens_is_sent(): void
+    {
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'x', 'model' => 'glm-5.1']);
+        $this->fakeRepo();
+
+        $client = new ScriptedTokenomixClient([
+            ['finish' => 'length', 'tools' => [['github_push_files', ['repo' => 'budi/web', 'commit_message' => 'x', 'files' => [['path' => 'a.html', 'content' => '<h1']]]]]],
+            ['tools' => [['github_push_files', ['repo' => 'budi/web']]]], // files missing
+            ['text' => 'Oke, saya bagi jadi bagian kecil.'],
+        ]);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'ubah repo budi/web lalu push'])
+            ->assertOk()->streamedContent();
+
+        $this->assertSame(16384, $client->calls[0]['max_tokens']);
+
+        $toolMsgs = array_values(array_filter($client->calls[2]['messages'], fn ($m) => $m['role'] === 'tool'));
+        $this->assertStringContainsString('terpotong karena batas panjang output', $toolMsgs[0]['content']);
+        $this->assertStringContainsString('Argumen kosong', $toolMsgs[1]['content']);
+
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), '/git/blobs'));
     }
 }
