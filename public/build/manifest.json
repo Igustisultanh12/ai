@@ -1,0 +1,171 @@
+{
+  "_runtime-core.esm-bundler-C28lxGl1.js": {
+    "file": "assets/runtime-core.esm-bundler-C28lxGl1.js",
+    "name": "runtime-core.esm-bundler"
+  },
+  "resources/css/app.css": {
+    "file": "assets/app-BsG5gFeJ.css",
+    "name": "app",
+    "names": [
+      "app.css"
+    ],
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/js/app.ts": {
+    "file": "assets/app-CDdkl2P2.js",
+    "name": "app",
+    "src": "resources/js/app.ts",
+    "isEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js"
+    ],
+    "dynamicImports": [
+      "resources/js/views/LandingView.vue",
+      "resources/js/views/LoginView.vue",
+      "resources/js/views/RegisterView.vue",
+      "resources/js/views/DashboardView.vue",
+      "resources/js/views/ProjectsView.vue",
+      "resources/js/views/WorkspaceView.vue",
+      "resources/js/views/ChatView.vue",
+      "resources/js/views/UsageView.vue",
+      "resources/js/views/SettingsView.vue",
+      "resources/js/views/AdminDashboardView.vue",
+      "resources/js/views/AdminUsersView.vue",
+      "resources/js/views/AdminAgentView.vue",
+      "resources/js/views/AdminAuditView.vue"
+    ],
+    "css": [
+      "assets/app-BsG5gFeJ.css"
+    ]
+  },
+  "resources/js/views/AdminAgentView.vue": {
+    "file": "assets/AdminAgentView-KdXMTJ1R.js",
+    "name": "AdminAgentView",
+    "src": "resources/js/views/AdminAgentView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/AdminAuditView.vue": {
+    "file": "assets/AdminAuditView-3kYoHDib.js",
+    "name": "AdminAuditView",
+    "src": "resources/js/views/AdminAuditView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/AdminDashboardView.vue": {
+    "file": "assets/AdminDashboardView-B8Zn6-Nr.js",
+    "name": "AdminDashboardView",
+    "src": "resources/js/views/AdminDashboardView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/AdminUsersView.vue": {
+    "file": "assets/AdminUsersView-DDr_yK5K.js",
+    "name": "AdminUsersView",
+    "src": "resources/js/views/AdminUsersView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/ChatView.vue": {
+    "file": "assets/ChatView-Rh2segmG.js",
+    "name": "ChatView",
+    "src": "resources/js/views/ChatView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/DashboardView.vue": {
+    "file": "assets/DashboardView-BXyiVQLn.js",
+    "name": "DashboardView",
+    "src": "resources/js/views/DashboardView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/LandingView.vue": {
+    "file": "assets/LandingView-B0qfmRQM.js",
+    "name": "LandingView",
+    "src": "resources/js/views/LandingView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js"
+    ]
+  },
+  "resources/js/views/LoginView.vue": {
+    "file": "assets/LoginView-By9soqDa.js",
+    "name": "LoginView",
+    "src": "resources/js/views/LoginView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/ProjectsView.vue": {
+    "file": "assets/ProjectsView-PiVDZQUU.js",
+    "name": "ProjectsView",
+    "src": "resources/js/views/ProjectsView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/RegisterView.vue": {
+    "file": "assets/RegisterView-D2RTItPc.js",
+    "name": "RegisterView",
+    "src": "resources/js/views/RegisterView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/SettingsView.vue": {
+    "file": "assets/SettingsView-CXsUzOxC.js",
+    "name": "SettingsView",
+    "src": "resources/js/views/SettingsView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/UsageView.vue": {
+    "file": "assets/UsageView-I0Bgqtse.js",
+    "name": "UsageView",
+    "src": "resources/js/views/UsageView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  },
+  "resources/js/views/WorkspaceView.vue": {
+    "file": "assets/WorkspaceView-B_0fiN4P.js",
+    "name": "WorkspaceView",
+    "src": "resources/js/views/WorkspaceView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "_runtime-core.esm-bundler-C28lxGl1.js",
+      "resources/js/app.ts"
+    ]
+  }
+}

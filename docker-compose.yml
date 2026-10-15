@@ -1,0 +1,165 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xzy_app
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    environment:
+      APP_NAME: XZY
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: xzy_db
+      DB_USERNAME: xzy_user
+      DB_PASSWORD: xzy_secure_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: database
+      FILESYSTEM_DISK: s3
+      AWS_ACCESS_KEY_ID: minio_admin
+      AWS_SECRET_ACCESS_KEY: minio_secure_password
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_BUCKET: xzy-artifacts
+      AWS_ENDPOINT: http://minio:9000
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
+    volumes:
+      - app_storage:/var/www/html/storage/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - xzy_network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xzy_worker
+    restart: unless-stopped
+    command: ["php", "/var/www/html/artisan", "queue:work", "--queue=default,ai,build,export,github", "--sleep=2", "--tries=3", "--timeout=300"]
+    environment:
+      APP_NAME: XZY
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: xzy_db
+      DB_USERNAME: xzy_user
+      DB_PASSWORD: xzy_secure_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QUEUE_CONNECTION: redis
+      CACHE_STORE: redis
+      FILESYSTEM_DISK: s3
+      AWS_ACCESS_KEY_ID: minio_admin
+      AWS_SECRET_ACCESS_KEY: minio_secure_password
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_BUCKET: xzy-artifacts
+      AWS_ENDPOINT: http://minio:9000
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
+    volumes:
+      - app_storage:/var/www/html/storage/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - xzy_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: xzy_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xzy_db
+      POSTGRES_USER: xzy_user
+      POSTGRES_PASSWORD: xzy_secure_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xzy_user -d xzy_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - xzy_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: xzy_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - xzy_network
+
+  minio:
+    image: minio/minio:latest
+    container_name: xzy_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio_admin
+      MINIO_ROOT_PASSWORD: minio_secure_password
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - xzy_network
+
+  # Isolated Sandbox Runner for untrusted user builds
+  sandbox_runner:
+    image: node:22-alpine
+    container_name: xzy_sandbox_runner
+    restart: "no"
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+    networks:
+      - xzy_sandbox_network
+
+networks:
+  xzy_network:
+    driver: bridge
+  xzy_sandbox_network:
+    driver: bridge
+    internal: true # Strict egress network restriction for untrusted sandbox
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  app_storage:
