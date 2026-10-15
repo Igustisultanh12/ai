@@ -1,5 +1,5 @@
 <template>
-  <div class="h-[calc(100vh-4rem)] flex flex-col bg-slate-950 overflow-hidden select-none">
+  <div data-no-motion class="h-[calc(100vh-4rem)] flex flex-col bg-slate-950 overflow-hidden select-none">
     <!-- Top Workspace Bar -->
     <div class="h-11 px-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
       <div class="flex items-center gap-3">
@@ -529,6 +529,7 @@ import { useRoute } from 'vue-router';
 import { api } from '@/api/client';
 import { useToast } from '@/composables/useToast';
 import { useModels } from '@/composables/useModels';
+import { notifyUsageChanged } from '@/composables/useUsage';
 import MonacoEditor from '@/components/MonacoEditor.vue';
 import DiffViewer from '@/components/DiffViewer.vue';
 
@@ -729,6 +730,7 @@ const triggerRun = async () => {
         }
     } finally {
         isRunning.value = false;
+        notifyUsageChanged();
     }
 };
 

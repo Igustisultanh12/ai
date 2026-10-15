@@ -25,7 +25,7 @@
       <!-- Quota Meter Widget -->
       <div v-if="quotaSummary" class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
         <span class="text-slate-400">Kuota Harian:</span>
-        <span class="font-semibold text-cyan-400">{{ formatNumber(quotaSummary.remaining_daily) }}</span>
+        <span class="font-semibold text-cyan-400 tabular-nums" :title="'Diperbarui ' + lastUpdatedLabel">{{ formatNumber(displayRemaining) }}</span>
         <span class="text-slate-500">/ {{ formatNumber(quotaSummary.daily_quota) }}</span>
         <div class="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden ml-1">
           <div
@@ -120,9 +120,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useAuth } from '@/stores/auth';
 import { api } from '@/api/client';
+import { USAGE_CHANGED_EVENT } from '@/composables/useUsage';
 
 defineEmits(['toggleSidebar']);
 
@@ -149,12 +150,56 @@ const handleLogout = async () => {
     await logout();
 };
 
-onMounted(async () => {
+// Remaining quota counts smoothly to its new value after each refresh
+const displayRemaining = ref(0);
+const lastUpdated = ref<Date | null>(null);
+const lastUpdatedLabel = computed(() =>
+    lastUpdated.value ? lastUpdated.value.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'
+);
+let tweenFrame = 0;
+
+const tweenRemaining = (target: number) => {
+    cancelAnimationFrame(tweenFrame);
+    const from = displayRemaining.value || target;
+    const start = performance.now();
+    const step = (now: number) => {
+        const t = Math.min(1, (now - start) / 700);
+        const eased = 1 - Math.pow(1 - t, 3);
+        displayRemaining.value = from + (target - from) * eased;
+        if (t < 1) tweenFrame = requestAnimationFrame(step);
+    };
+    tweenFrame = requestAnimationFrame(step);
+};
+
+const refreshQuota = async () => {
     try {
         const res = await api.get('/api/usage/summary');
         quotaSummary.value = res;
+        lastUpdated.value = new Date();
+        tweenRemaining(Number(res.remaining_daily) || 0);
     } catch (e) {
         // Ignore quota meter failure
     }
+};
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+const onVisible = () => {
+    if (document.visibilityState === 'visible') refreshQuota();
+};
+
+onMounted(() => {
+    refreshQuota();
+    window.addEventListener(USAGE_CHANGED_EVENT, refreshQuota);
+    document.addEventListener('visibilitychange', onVisible);
+    pollTimer = setInterval(() => {
+        if (document.visibilityState === 'visible') refreshQuota();
+    }, 60000);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener(USAGE_CHANGED_EVENT, refreshQuota);
+    document.removeEventListener('visibilitychange', onVisible);
+    if (pollTimer) clearInterval(pollTimer);
+    cancelAnimationFrame(tweenFrame);
 });
 </script>

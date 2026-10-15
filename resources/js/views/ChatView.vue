@@ -210,6 +210,7 @@ import AgentActivity from '@/components/AgentActivity.vue';
 import type { AgentStep } from '@/types/agent';
 import { extractCodeFiles, collectLatestFiles, type CodeFile } from '@/utils/codeBlocks';
 import { useModels } from '@/composables/useModels';
+import { notifyUsageChanged } from '@/composables/useUsage';
 
 const toast = useToast();
 
@@ -601,6 +602,7 @@ const sendMessage = async () => {
         if (!isWaitingServer.value) {
             isStreaming.value = false;
         }
+        notifyUsageChanged();
         scrollToBottom();
     }
 };
@@ -654,6 +656,7 @@ const waitForServerResult = async (convId: string, startedAt?: number) => {
         streamingText.value = '';
         isWaitingServer.value = false;
         isStreaming.value = false;
+        notifyUsageChanged();
         scrollToBottom();
     }
 };

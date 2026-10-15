@@ -1,17 +1,20 @@
 <template>
-  <div class="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 selection:bg-violet-500 selection:text-white">
-    <div class="max-w-md w-full space-y-6">
-      <div class="text-center space-y-2">
-        <router-link to="/" class="inline-flex items-center gap-2">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 via-fuchsia-500 to-cyan-400 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-violet-500/25">
+  <div class="relative min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 overflow-hidden selection:bg-violet-500 selection:text-white">
+    <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="absolute inset-0 grid-bg pointer-events-none" aria-hidden="true"></div>
+
+    <div class="relative z-10 max-w-md w-full space-y-6">
+      <div v-reveal class="text-center space-y-2">
+        <router-link to="/" class="inline-flex items-center gap-2 group">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 via-fuchsia-500 to-cyan-400 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-violet-500/25 transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
             X
           </div>
           <span class="text-3xl font-black tracking-tight text-white">XZY</span>
         </router-link>
-        <p class="text-sm text-slate-400">Buat akun untuk memulai vibecoding dan AI chat</p>
+        <p class="text-sm text-slate-400">Bikin akun gratis, lalu mulai ngoding bareng AI.</p>
       </div>
 
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
+      <div v-reveal:zoom="100" class="glow-border bg-slate-900/80 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-violet-950/50 backdrop-blur-xl">
         <form @submit.prevent="handleRegister" class="space-y-4">
           <div v-if="errorMessage" class="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs">
             {{ errorMessage }}
