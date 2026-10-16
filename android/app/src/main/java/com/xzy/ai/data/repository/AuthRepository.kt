@@ -1,97 +1,96 @@
 package com.xzy.ai.data.repository
 
-import com.xzy.ai.data.local.PreferencesManager
-import com.xzy.ai.data.remote.RetrofitClient
-import com.xzy.ai.data.remote.dto.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.xzy.ai.data.api.ApiService
+import com.xzy.ai.data.api.dto.LoginRequest
+import com.xzy.ai.data.api.dto.RegisterRequest
+import com.xzy.ai.data.model.User
+import com.xzy.ai.utils.Result
+import com.xzy.ai.utils.TokenManager
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class AuthRepository(private val prefsManager: PreferencesManager) {
-    
-    private val apiService = RetrofitClient.apiService
-    
-    suspend fun register(
-        name: String,
-        email: String,
-        password: String,
-        passwordConfirmation: String
-    ): Result<AuthResponse> = withContext(Dispatchers.IO) {
-        try {
-            val request = RegisterRequest(name, email, password, passwordConfirmation)
-            val response = apiService.register(request)
-            
+@Singleton
+class AuthRepository @Inject constructor(
+    private val apiService: ApiService,
+    private val tokenManager: TokenManager
+) {
+
+    suspend fun login(email: String, password: String): Result<User> {
+        return try {
+            val response = apiService.login(LoginRequest(email, password))
             if (response.isSuccessful && response.body() != null) {
-                val authResponse = response.body()!!
-                saveUserData(authResponse.user)
-                Result.success(authResponse)
+                val body = response.body()!!
+                tokenManager.saveToken(body.data.token)
+                val user = User(
+                    id = body.data.user.id,
+                    name = body.data.user.name,
+                    email = body.data.user.email,
+                    avatar = body.data.user.avatar
+                )
+                Result.Success(user)
             } else {
-                Result.failure(Exception(response.message() ?: "Registration failed"))
+                Result.Error("Login failed: ${response.message()}")
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e.message ?: "Unknown error")
         }
     }
-    
-    suspend fun login(
-        email: String,
-        password: String
-    ): Result<AuthResponse> = withContext(Dispatchers.IO) {
-        try {
-            val request = LoginRequest(email, password)
-            val response = apiService.login(request)
-            
+
+    suspend fun register(name: String, email: String, password: String): Result<User> {
+        return try {
+            val response = apiService.register(
+                RegisterRequest(name, email, password, password)
+            )
             if (response.isSuccessful && response.body() != null) {
-                val authResponse = response.body()!!
-                saveUserData(authResponse.user)
-                Result.success(authResponse)
+                val body = response.body()!!
+                tokenManager.saveToken(body.data.token)
+                val user = User(
+                    id = body.data.user.id,
+                    name = body.data.user.name,
+                    email = body.data.user.email,
+                    avatar = body.data.user.avatar
+                )
+                Result.Success(user)
             } else {
-                Result.failure(Exception(response.message() ?: "Login failed"))
+                Result.Error("Registration failed: ${response.message()}")
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e.message ?: "Unknown error")
         }
     }
-    
-    suspend fun logout(): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
+
+    suspend fun logout(): Result<Unit> {
+        return try {
             apiService.logout()
-            clearUserData()
-            Result.success(Unit)
+            tokenManager.clearToken()
+            Result.Success(Unit)
         } catch (e: Exception) {
-            // Clear local data even if API call fails
-            clearUserData()
-            Result.success(Unit)
+            tokenManager.clearToken()
+            Result.Error(e.message ?: "Unknown error")
         }
     }
-    
-    suspend fun getCurrentUser(): Result<UserDto> = withContext(Dispatchers.IO) {
-        try {
+
+    fun isLoggedIn(): Boolean {
+        return tokenManager.getToken() != null
+    }
+
+    suspend fun getCurrentUser(): Result<User> {
+        return try {
             val response = apiService.getCurrentUser()
             if (response.isSuccessful && response.body() != null) {
-                val user = response.body()!!
-                saveUserData(user)
-                Result.success(user)
+                val dto = response.body()!!.data
+                val user = User(
+                    id = dto.id,
+                    name = dto.name,
+                    email = dto.email,
+                    avatar = dto.avatar
+                )
+                Result.Success(user)
             } else {
-                Result.failure(Exception("Failed to fetch user"))
+                Result.Error("Failed to get user info")
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.Error(e.message ?: "Unknown error")
         }
     }
-    
-    private fun saveUserData(user: UserDto) {
-        prefsManager.userId = user.id
-        prefsManager.userName = user.name
-        prefsManager.userEmail = user.email
-        prefsManager.isLoggedIn = true
-    }
-    
-    private fun clearUserData() {
-        prefsManager.clearAll()
-        RetrofitClient.clearCookies()
-    }
-    
-    fun isLoggedIn(): Boolean = prefsManager.isLoggedIn
-    
-    fun getUserName(): String? = prefsManager.userName
 }
