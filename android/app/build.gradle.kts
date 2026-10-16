@@ -25,14 +25,34 @@ android {
         buildConfigField("String", "BASE_URL", "\"https://xyzku.my.id/\"")
     }
 
+    signingConfigs {
+        create("release") {
+            // Load from environment variables (for CI/CD)
+            storeFile = System.getenv("KEYSTORE_FILE")?.let { file(it) }
+                ?: project.findProperty("android.injected.signing.store.file")?.let { file(it) }
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+                ?: project.findProperty("android.injected.signing.store.password") as String?
+            keyAlias = System.getenv("KEY_ALIAS")
+                ?: project.findProperty("android.injected.signing.key.alias") as String?
+            keyPassword = System.getenv("KEY_PASSWORD")
+                ?: project.findProperty("android.injected.signing.key.password") as String?
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // Use release signing if available, otherwise use debug
+            signingConfig = if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

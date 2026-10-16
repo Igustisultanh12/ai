@@ -1,0 +1,1 @@
+[isi berkas 1018 karakter sudah ditulis]

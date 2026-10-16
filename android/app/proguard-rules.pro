@@ -45,3 +45,44 @@
 -keepclassmembers class * extends com.google.crypto.tink.shaded.protobuf.GeneratedMessageLite {
     <fields>;
 }
+
+# Jetpack Compose
+-keep class androidx.compose.** { *; }
+-dontwarn androidx.compose.**
+-keepclassmembers class androidx.compose.** { *; }
+
+# Hilt
+-dontwarn dagger.hilt.**
+-keep class dagger.hilt.** { *; }
+-keepclassmembers class * {
+    @dagger.hilt.* <methods>;
+}
+
+# Keep data classes
+-keep class com.xzy.ai.data.** { *; }
+-keep class com.xzy.ai.domain.** { *; }
+
+# Keep Parcelables
+-keep class * implements android.os.Parcelable {
+  public static final android.os.Parcelable$Creator *;
+}
+
+# Keep Serializable
+-keepnames class * implements java.io.Serializable
+-keepclassmembers class * implements java.io.Serializable {
+    static final long serialVersionUID;
+    private static final java.io.ObjectStreamField[] serialPersistentFields;
+    !static !transient <fields>;
+    private void writeObject(java.io.ObjectOutputStream);
+    private void readObject(java.io.ObjectInputStream);
+    java.lang.Object writeReplace();
+    java.lang.Object readResolve();
+}
+
+# Coil Image Loading
+-keep class coil.** { *; }
+-dontwarn coil.**
+
+# Navigation Compose
+-keep class androidx.navigation.** { *; }
+-dontwarn androidx.navigation.**
