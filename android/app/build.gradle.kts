@@ -83,6 +83,7 @@ dependencies {
 
     // Security & EncryptedSharedPreferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    compileOnly("com.google.errorprone:error_prone_annotations:2.28.0")
 
     // Network
     implementation(libs.retrofit)

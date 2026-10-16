@@ -33,3 +33,15 @@
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 -dontwarn kotlinx.coroutines.flow.**
+
+# Google Tink / Security Crypto / Error Prone
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn com.google.crypto.tink.**
+-dontwarn javax.annotation.**
+-dontwarn org.checkerframework.**
+-dontwarn sun.misc.Unsafe
+
+-keep class com.google.crypto.tink.** { *; }
+-keepclassmembers class * extends com.google.crypto.tink.shaded.protobuf.GeneratedMessageLite {
+    <fields>;
+}
