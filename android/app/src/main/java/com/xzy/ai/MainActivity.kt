@@ -1,260 +1,58 @@
 package com.xzy.ai
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.lifecycleScope
+import com.xzy.ai.data.Agent
+import com.xzy.ai.data.DeepLink
+import com.xzy.ai.data.Prefs
+import com.xzy.ai.data.Session
+import com.xzy.ai.data.Updater
+import com.xzy.ai.ui.XzyRoot
 import kotlinx.coroutines.launch
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import com.xzy.ai.ui.components.NavigationDrawer
-import com.xzy.ai.ui.navigation.Screen
-import com.xzy.ai.ui.screens.DashboardScreen
-import com.xzy.ai.ui.screens.ProjectsScreen
-import com.xzy.ai.ui.screens.UsageScreen
-import com.xzy.ai.ui.screens.SettingsScreen
-import com.xzy.ai.ui.screens.WorkspaceScreen
-import com.xzy.ai.ui.screens.auth.LoginScreen
-import com.xzy.ai.ui.screens.auth.RegisterScreen
-import com.xzy.ai.ui.screens.chat.ChatScreen
-import com.xzy.ai.ui.screens.splash.SplashScreen
-import com.xzy.ai.ui.theme.XzyAITheme
-import com.xzy.ai.utils.TokenManager
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
-    @Inject
-    lateinit var tokenManager: TokenManager
-
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyBars(Prefs.dark)
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        handle(intent)
         setContent {
-            XzyAITheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    val isLoggedIn = !tokenManager.getToken().isNullOrBlank()
-                    XzyAppNavigation(
-                        isLoggedIn = isLoggedIn,
-                        onLogout = { tokenManager.clearToken() }
-                    )
-                }
-            }
+            val dark = Prefs.dark
+            LaunchedEffect(dark) { applyBars(dark) }
+            XzyRoot()
         }
     }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun XzyAppNavigation(
-    isLoggedIn: Boolean,
-    onLogout: () -> Unit
-) {
-    val navController = rememberNavController()
-    val currentBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = currentBackStackEntry?.destination?.route
-    
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-
-    // Check if current screen should show drawer
-    val showDrawer = when {
-        currentRoute == null -> false
-        currentRoute.startsWith("splash") -> false
-        currentRoute.startsWith("login") -> false
-        currentRoute.startsWith("register") -> false
-        else -> true
+    /** Light or dark status/navigation bar icons to match the app theme. */
+    private fun applyBars(dark: Boolean) {
+        val t = android.graphics.Color.TRANSPARENT
+        val style = if (dark) SystemBarStyle.dark(t) else SystemBarStyle.light(t, t)
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
-    if (showDrawer) {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                NavigationDrawer(
-                    navController = navController,
-                    currentRoute = currentRoute,
-                    onCloseDrawer = {
-                        scope.launch { drawerState.close() }
-                    },
-                    onLogout = {
-                        onLogout()
-                        navController.navigate("login") {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    }
-                )
-            }
-        ) {
-            Scaffold(
-                topBar = {
-                    if (showDrawer) {
-                        TopAppBar(
-                            title = {
-                                Text(
-                                    text = when {
-                                        currentRoute == Screen.Dashboard.route -> "Dashboard"
-                                        currentRoute == Screen.Projects.route -> "Projects"
-                                        currentRoute?.startsWith("chat") == true -> "Chat"
-                                        currentRoute == Screen.Usage.route -> "Usage"
-                                        currentRoute == Screen.Settings.route -> "Settings"
-                                        currentRoute?.startsWith("workspace") == true -> "Workspace"
-                                        else -> "XZY AI"
-                                    }
-                                )
-                            },
-                            navigationIcon = {
-                                IconButton(onClick = {
-                                    scope.launch { drawerState.open() }
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Menu,
-                                        contentDescription = "Menu"
-                                    )
-                                }
-                            }
-                        )
-                    }
-                }
-            ) { padding ->
-                NavHost(
-                    navController = navController,
-                    startDestination = "splash",
-                    modifier = Modifier.padding(padding)
-                ) {
-                    // Auth screens
-                    composable("splash") {
-                        SplashScreen(
-                            onNavigateToLogin = {
-                                navController.navigate("login") {
-                                    popUpTo("splash") { inclusive = true }
-                                }
-                            }
-                        )
-                    }
-                    composable("login") {
-                        LoginScreen(
-                            onLoginSuccess = {
-                                navController.navigate("chat") {
-                                    popUpTo("login") { inclusive = true }
-                                }
-                            }
-                        )
-                    }
-                    composable("register") {
-                        RegisterScreen(
-                            onNavigateToLogin = {
-                                navController.popBackStack()
-                            },
-                            onRegisterSuccess = {
-                                navController.navigate(Screen.Dashboard.route) {
-                                    popUpTo("register") { inclusive = true }
-                                }
-                            }
-                        )
-                    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
 
-                    // Main screens
-                    composable(Screen.Dashboard.route) {
-                        DashboardScreen()
-                    }
-                    composable(Screen.Projects.route) {
-                        ProjectsScreen()
-                    }
-                    composable(
-                        route = Screen.Chat.route,
-                        arguments = listOf(
-                            navArgument("id") {
-                                type = NavType.StringType
-                                defaultValue = "new"
-                            }
-                        )
-                    ) { backStackEntry ->
-                        val chatId = backStackEntry.arguments?.getString("id") ?: "new"
-                        ChatScreen(
-                            chatId = chatId,
-                            onNavigateBack = {
-                                navController.popBackStack()
-                            }
-                        )
-                    }
-                    composable(Screen.Usage.route) {
-                        UsageScreen()
-                    }
-                    composable(Screen.Settings.route) {
-                        SettingsScreen(navController = navController)
-                    }
-                    composable(
-                        route = Screen.Workspace.route,
-                        arguments = listOf(
-                            navArgument("id") {
-                                type = NavType.StringType
-                            }
-                        )
-                    ) { backStackEntry ->
-                        val projectId = backStackEntry.arguments?.getString("id") ?: ""
-                        WorkspaceScreen(
-                            projectId = projectId,
-                            onNavigateBack = {
-                                navController.popBackStack()
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    } else {
-        // Auth flow without drawer
-        NavHost(
-            navController = navController,
-            startDestination = "splash"
-        ) {
-            composable("splash") {
-                SplashScreen(
-                    onNavigateToLogin = {
-                        navController.navigate("login") {
-                            popUpTo("splash") { inclusive = true }
-                        }
-                    }
-                )
-            }
-            composable("login") {
-                LoginScreen(
-                    onLoginSuccess = {
-                        navController.navigate("chat") {
-                            popUpTo("login") { inclusive = true }
-                        }
-                    }
-                )
-            }
-            composable("register") {
-                RegisterScreen(
-                    onNavigateToLogin = {
-                        navController.popBackStack()
-                    },
-                    onRegisterSuccess = {
-                        navController.navigate(Screen.Dashboard.route) {
-                            popUpTo("register") { inclusive = true }
-                        }
-                    }
-                )
-            }
-        }
+    private fun handle(intent: Intent?) {
+        intent?.getStringExtra("target")?.let { DeepLink.pending = it }
+        intent?.removeExtra("target")
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Agent.foreground = true
+        if (Session.user != null) lifecycleScope.launch { Updater.checkIfDue() }
+    }
+
+    override fun onStop() {
+        Agent.foreground = false
+        super.onStop()
     }
 }

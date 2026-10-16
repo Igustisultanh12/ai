@@ -2,16 +2,41 @@ name: Build & Release APK
 
 on:
   push:
-    branches: [ android-app, main ]
-    tags: [ 'v*' ]
+    branches: [ main, android-app ]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-build.yml'
   workflow_dispatch:
+  schedule:
+    # Touch the cached signing key weekly so GitHub never evicts it (evicting it would
+    # change the signature and block in-app updates)
+    - cron: '17 3 * * 1'
 
 permissions:
   contents: write
 
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  KEY_CACHE: xzy-android-signing-v1
+
 jobs:
-  build:
+  keep-key:
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    steps:
+      - name: Restore signing key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ${{ env.KEY_CACHE }}
+
+  build:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,47 +47,101 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # The same key signs every build so new versions install over old ones.
+      # It lives only in the Actions cache (the repo is public, so it is never committed).
+      - name: Restore signing key
+        id: key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ${{ env.KEY_CACHE }}
+
+      - name: Create signing key
+        if: steps.key.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=XZY AI,O=XZY,C=ID"
+
+      - name: Save signing key
+        if: steps.key.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ${{ env.KEY_CACHE }}
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Build debug APK
+      - name: Build release APK
+        id: gradle
         working-directory: android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace --console=plain 2>&1 | tee ../gradle.log
+
+      # Logs are hard to read from outside; surface compiler errors as annotations
+      - name: Report build errors
+        if: failure() && steps.gradle.outcome == 'failure'
+        run: |
+          strip() { sed -e 's#file:///home/runner/work/[^/]*/[^/]*/android/app/src/main/java/com/xzy/ai/##' -e 's#/home/runner/work/[^/]*/[^/]*/android/##'; }
+          enc() { sed -e ':a;N;$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g'; }
+          grep -E '^e: ' gradle.log | strip | sort -u > kt.txt || true
+          if [ -s kt.txt ]; then
+            echo "Kotlin errors: $(wc -l < kt.txt)"
+            split -l 8 kt.txt kt_part_
+            for f in kt_part_*; do
+              echo "::error title=Kotlin compile errors::$(head -c 3800 "$f" | enc)"
+            done
+          fi
+          grep -E -A12 'What went wrong' gradle.log | strip | head -40 > wrong.txt || true
+          if [ -s wrong.txt ]; then
+            echo "::error title=Gradle: what went wrong::$(head -c 3800 wrong.txt | enc)"
+          fi
+          grep -E 'AAPT|error:|ERROR:|Execution failed' gradle.log | strip | sort -u | head -30 > other.txt || true
+          if [ -s other.txt ]; then
+            echo "::error title=Build errors::$(head -c 3800 other.txt | enc)"
+          fi
 
       - name: Collect APK
+        id: apk
         run: |
+          VERSION="3.0.${GITHUB_RUN_NUMBER}"
           mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/xzy-ai.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "out/xzy-ai-${VERSION}.apk"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "file=out/xzy-ai-${VERSION}.apk" >> "$GITHUB_OUTPUT"
+          ls -la out
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xzy-ai-apk
-          path: out/xzy-ai.apk
+          name: xzy-ai-${{ steps.apk.outputs.version }}
+          path: ${{ steps.apk.outputs.file }}
           if-no-files-found: error
 
-      - name: Get version
-        id: version
+      - name: Release notes
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=build-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
-          fi
+          {
+            echo "## XZY AI ${{ steps.apk.outputs.version }}"
+            echo
+            git log -1 --pretty=%B | sed '/^Co-Authored-By:/d;/^Claude-Session:/d'
+            echo
+            echo "Pasang file APK di bawah. Aplikasi yang sudah terpasang akan menawarkan pembaruan ini secara otomatis."
+          } > notes.md
 
-      - name: Create Release
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && steps.version.outputs.tag || format('Build {0}', steps.version.outputs.tag) }}
-          body: |
-            Automated build from commit ${{ github.sha }}
-            
-            **Changes:** ${{ github.event.head_commit.message }}
-          files: out/xzy-ai.apk
+          tag_name: android-v${{ steps.apk.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: XZY AI ${{ steps.apk.outputs.version }}
+          body_path: notes.md
+          files: ${{ steps.apk.outputs.file }}
           draft: false
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-          generate_release_notes: true
+          prerelease: false
+          make_latest: true

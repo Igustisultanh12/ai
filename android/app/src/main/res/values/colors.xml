@@ -1,23 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
-    
-    <!-- Brand Colors - Vibrant & Playful -->
-    <color name="brand_purple">#8B5CF6</color>
+    <color name="window_bg">#0B0A12</color>
     <color name="brand_violet">#7C3AED</color>
-    <color name="brand_pink">#EC4899</color>
-    <color name="brand_yellow">#FDE047</color>
-    <color name="brand_lime">#BEF264</color>
-    <color name="brand_orange">#FB923C</color>
-    <color name="brand_cyan">#06B6D4</color>
-    
-    <!-- Surface Colors -->
-    <color name="surface_dark_1">#0A0D12</color>
-    <color name="surface_dark_2">#0F131C</color>
-    <color name="surface_dark_3">#161D2B</color>
-    <color name="surface_dark_4">#1E2636</color>
-    
-    <!-- Splash Screen -->
-    <color name="splash_background">#0A0D12</color>
+    <color name="brand_fuchsia">#C026D3</color>
+    <color name="brand_orange">#F97316</color>
 </resources>
