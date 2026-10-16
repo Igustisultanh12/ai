@@ -81,11 +81,15 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
+    // Security & EncryptedSharedPreferences
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
     // Network
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+    implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
 
     // Image loading
     implementation(libs.coil.compose)
@@ -100,4 +104,7 @@ dependencies {
 
     // Lottie animations
     implementation(libs.lottie.compose)
+
+    // Unit Testing
+    testImplementation("junit:junit:4.13.2")
 }

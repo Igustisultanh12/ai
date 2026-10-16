@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+
 data class ChatUiState(
     val conversations: List<ConversationDto> = emptyList(),
     val selectedConversation: ConversationDto? = null,
@@ -21,7 +24,10 @@ data class ChatUiState(
     val showConversationDrawer: Boolean = false
 )
 
-class ChatViewModel(private val conversationRepository: ConversationRepository) : ViewModel() {
+@HiltViewModel
+class ChatViewModel @Inject constructor(
+    private val conversationRepository: ConversationRepository
+) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     

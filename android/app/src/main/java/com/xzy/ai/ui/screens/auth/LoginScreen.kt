@@ -31,9 +31,9 @@ import com.xzy.ai.ui.theme.*
 
 @Composable
 fun LoginScreen(
-    viewModel: LoginViewModel,
     onNavigateToRegister: () -> Unit,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: () -> Unit,
+    viewModel: LoginViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current

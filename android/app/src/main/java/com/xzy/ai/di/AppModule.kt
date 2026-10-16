@@ -78,5 +78,19 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAppDao(database: AppDatabase) = database.appDao()
+    fun provideConversationDao(database: AppDatabase): com.xzy.ai.data.local.ConversationDao {
+        return database.conversationDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideMessageDao(database: AppDatabase): com.xzy.ai.data.local.MessageDao {
+        return database.messageDao()
+    }
+
+    @Provides
+    @Singleton
+    fun providePreferencesManager(@ApplicationContext context: Context): com.xzy.ai.data.local.PreferencesManager {
+        return com.xzy.ai.data.local.PreferencesManager(context)
+    }
 }

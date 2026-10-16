@@ -31,9 +31,9 @@ import com.xzy.ai.ui.theme.*
 
 @Composable
 fun RegisterScreen(
-    viewModel: RegisterViewModel,
     onNavigateToLogin: () -> Unit,
-    onRegisterSuccess: () -> Unit
+    onRegisterSuccess: () -> Unit,
+    viewModel: RegisterViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
