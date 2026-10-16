@@ -1,0 +1,125 @@
+name: Android Build & Release
+
+on:
+  push:
+    branches:
+      - android-app
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - android-app
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+          
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+        
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
+          
+      - name: Build Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --stacktrace
+          
+      - name: Sign APK
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: android/app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+          
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xzy-ai-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xzy-ai-release
+          path: android/app/build/outputs/apk/release/*.apk
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download Release APK
+        uses: actions/download-artifact@v4
+        with:
+          name: xzy-ai-release
+          path: ./apk
+          
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./apk/*.apk
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: XZY AI Android ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            ## 🎉 XZY AI Android Release ${{ steps.get_version.outputs.VERSION }}
+            
+            ### 📦 Download
+            Unduh APK di bawah ini dan install di perangkat Android Anda (min. Android 8.0)
+            
+            ### ✨ Features
+            - 🤖 Multi AI Models (Claude, GPT-4, Gemini, LLama)
+            - 💬 Real-time chat dengan animasi smooth
+            - 🎨 Colorful UI dengan Material Design 3
+            - 🌙 Dark mode support
+            - 💾 Offline conversation storage
+            - 🔐 Secure authentication
+            
+            ### 🛠️ Tech Stack
+            - Kotlin 1.9+
+            - Jetpack Compose
+            - Material Design 3
+            - MVVM Architecture
+            
+            ### 📝 Changelog
+            See full changelog in the commits.
+            
+            ---
+            Built with ❤️ by [@Igustisultanh12](https://github.com/Igustisultanh12)
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
