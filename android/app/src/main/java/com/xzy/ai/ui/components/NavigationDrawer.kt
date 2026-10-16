@@ -17,6 +17,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.xzy.ai.ui.navigation.Screen
 import com.xzy.ai.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavigationDrawer(

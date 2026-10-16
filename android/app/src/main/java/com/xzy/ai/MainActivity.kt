@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -148,7 +149,13 @@ fun XzyAppNavigation(
                         )
                     }
                     composable("login") {
-                        LoginScreen(navController = navController)
+                        LoginScreen(
+                            onLoginSuccess = {
+                                navController.navigate("chat") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            }
+                        )
                     }
                     composable("register") {
                         RegisterScreen(
@@ -228,7 +235,13 @@ fun XzyAppNavigation(
                 )
             }
             composable("login") {
-                LoginScreen(navController = navController)
+                LoginScreen(
+                    onLoginSuccess = {
+                        navController.navigate("chat") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                    }
+                )
             }
             composable("register") {
                 RegisterScreen(

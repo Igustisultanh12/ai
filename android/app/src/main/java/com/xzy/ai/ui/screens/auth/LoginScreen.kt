@@ -15,12 +15,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
-    navController: NavController,
+    onLoginSuccess: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var email by remember { mutableStateOf("") }
@@ -127,9 +126,7 @@ fun LoginScreen(
                     isLoading = true
                     // TODO: Implement actual login logic
                     // For now, simulate login
-                    navController.navigate("chat") {
-                        popUpTo("login") { inclusive = true }
-                    }
+                    onLoginSuccess()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -162,7 +159,7 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 TextButton(
-                    onClick = { navController.navigate("register") },
+                    onClick = { /* TODO: Navigate to register */ },
                     enabled = !isLoading
                 ) {
                     Text("Sign Up")
