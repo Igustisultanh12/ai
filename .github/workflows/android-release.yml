@@ -1,0 +1,193 @@
+name: XZY AI Android — Build, Test & Release
+
+# Build & test di setiap push/PR. GitHub Release dibuat otomatis:
+#  - setiap push ke android-app yang lulus build, bila rilis v<versionName> belum ada
+#    (naikkan versionName di android/app/build.gradle.kts untuk rilis baru);
+#  - atau saat tag v* di-push / workflow dijalankan manual dari android-app.
+# Rilis hanya diterbitkan bila APK rilis ditandatangani.
+on:
+  push:
+    branches: [ android-app, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ android-app, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Android build & unit tests
+    runs-on: ubuntu-latest
+    env:
+      XZY_KEYSTORE_BASE64: ${{ secrets.XZY_KEYSTORE_BASE64 }}
+      XZY_KEYSTORE_PASSWORD: ${{ secrets.XZY_KEYSTORE_PASSWORD }}
+      XZY_KEY_ALIAS: ${{ secrets.XZY_KEY_ALIAS }}
+      XZY_KEY_PASSWORD: ${{ secrets.XZY_KEY_PASSWORD }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore release keystore (only if secrets are configured)
+        if: env.XZY_KEYSTORE_BASE64 != ''
+        run: |
+          echo "$XZY_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/xzy-release.jks"
+          echo "XZY_KEYSTORE_PATH=$RUNNER_TEMP/xzy-release.jks" >> "$GITHUB_ENV"
+
+      - name: Unit tests
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-test.log"
+
+      - name: Lint (report only)
+        working-directory: android
+        continue-on-error: true
+        run: gradle :app:lintDebug
+
+      - name: Assemble debug, release APK & Play Store AAB Bundle
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug :app:assembleRelease :app:bundleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-assemble.log"
+
+      - name: Report Gradle errors as annotations
+        if: failure()
+        run: |
+          # Ringkas error kompilasi/test agar terbaca di tab Checks tanpa membuka log penuh.
+          cat "$RUNNER_TEMP"/gradle-*.log 2>/dev/null \
+            | grep -E '^e: |What went wrong|^> |FAILED|Exception|expected:|AssertionError|Could not|Unresolved|error:' \
+            | grep -vE '^> Task .* (UP-TO-DATE|NO-SOURCE|SKIPPED|FROM-CACHE)$' \
+            | sed -E 's#file:///home/runner/work/[^/]+/[^/]+/##; s#/home/runner/work/[^/]+/[^/]+/##' \
+            | head -200 > "$RUNNER_TEMP/gradle-errors.txt" || true
+          split -l 20 "$RUNNER_TEMP/gradle-errors.txt" "$RUNNER_TEMP/gerr-" || true
+          n=0
+          for f in "$RUNNER_TEMP"/gerr-*; do
+            [ -f "$f" ] || continue
+            n=$((n+1)); [ $n -gt 10 ] && break
+            msg=$(sed -e 's/%/%25/g' "$f" | awk 'BEGIN{ORS="%0A"} {print}')
+            echo "::error title=Gradle errors part $n::$msg"
+          done
+
+      - name: Collect APKs & Play Store AAB, verify signature, compute SHA-256
+        id: collect
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -E 'versionName *= *"' android/app/build.gradle.kts | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk "out/XZY-AI-${VERSION}-debug.apk"
+          
+          # Android App Bundle (.aab) untuk Play Store
+          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
+            cp android/app/build/outputs/bundle/release/app-release.aab "out/XZY-AI-${VERSION}.aab"
+          fi
+
+          SIGNED=false
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "out/XZY-AI-${VERSION}.apk"
+            APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+            "$APKSIGNER" verify --verbose --print-certs "out/XZY-AI-${VERSION}.apk" | tee "$RUNNER_TEMP/certs.txt"
+            if grep -q "CN=Android Debug" "$RUNNER_TEMP/certs.txt"; then
+              # Kunci debug berbeda di setiap runner → APK tidak bisa dipasang sebagai pembaruan.
+              echo "::warning title=Kunci debug::APK rilis ditandatangani kunci debug acak. Rilis TIDAK diterbitkan agar pengguna tidak perlu uninstall. Isi secrets XZY_KEYSTORE_*."
+              mv "out/XZY-AI-${VERSION}.apk" "out/XZY-AI-${VERSION}-debugsigned.apk"
+              rm -f "out/XZY-AI-${VERSION}.aab"
+              SIGNED=false
+            else
+              SIGNED=true
+            fi
+          else
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk "out/XZY-AI-${VERSION}-unsigned.apk"
+            echo "::warning title=Unsigned release::Secrets keystore belum dikonfigurasi; APK rilis tidak ditandatangani dan tidak akan dipublikasikan."
+          fi
+          echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"
+          (cd out && sha256sum *.{apk,aab} > SHA256SUMS.txt 2>/dev/null || sha256sum *.apk > SHA256SUMS.txt; cat SHA256SUMS.txt)
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: XZY-AI-Android-${{ steps.collect.outputs.version }}
+          path: |
+            out/*.apk
+            out/*.aab
+            out/SHA256SUMS.txt
+            android/app/build/reports/lint-results-debug.html
+
+      - name: Determine release tag
+        id: reltag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.collect.outputs.version }}
+        run: |
+          set -euo pipefail
+          PUBLISH=false
+          TAG=""
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+            PUBLISH=true
+          elif [[ "$GITHUB_EVENT_NAME" != "pull_request" && ("$GITHUB_REF" == "refs/heads/android-app" || "$GITHUB_REF" == "refs/heads/main") ]]; then
+            TAG="v${VERSION}"
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1; then
+              echo "::notice title=Rilis sudah ada::${TAG} sudah dirilis. Naikkan versionName untuk menerbitkan rilis baru."
+            else
+              PUBLISH=true
+            fi
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: ${TAG:-<none>} publish=${PUBLISH}"
+
+      - name: Publish GitHub Release
+        if: steps.reltag.outputs.publish == 'true' && steps.collect.outputs.signed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.reltag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: XZY AI Android ${{ steps.reltag.outputs.tag }}
+          body: |
+            # XZY AI Chat & Vibecoding - Android Release
+            
+            ## 🎉 Fitur Utama
+            - 🤖 Multi AI Models (Claude, GPT-4, Gemini, LLama)
+            - 💬 Real-time Chat dengan typing animation
+            - 🎨 Modern colorful UI dengan smooth animations
+            - 🔐 Secure authentication & token management
+            - 💾 Offline support dengan Room Database
+            - 📱 Material Design 3
+            
+            ## 📦 Download
+            - **XZY-AI-${{ steps.collect.outputs.version }}.apk** - Siap install
+            - **XZY-AI-${{ steps.collect.outputs.version }}.aab** - Google Play Store Bundle
+            
+            ## 📋 Requirements
+            - Android 8.0 (API 26) atau lebih tinggi
+            - Internet connection
+            - ~50MB storage
+            
+            Server: https://xyzku.my.id
+          files: |
+            out/XZY-AI-${{ steps.collect.outputs.version }}.apk
+            out/XZY-AI-${{ steps.collect.outputs.version }}.aab
+            out/SHA256SUMS.txt
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse to release unsigned build
+        if: steps.reltag.outputs.publish == 'true' && steps.collect.outputs.signed != 'true'
+        run: |
+          echo "::error title=Release blocked::Rilis ${{ steps.reltag.outputs.tag }} tidak diterbitkan karena APK tidak ditandatangani kunci rilis tetap. Tambahkan secrets XZY_KEYSTORE_BASE64, XZY_KEYSTORE_PASSWORD, XZY_KEY_ALIAS, XZY_KEY_PASSWORD."
+          exit 1
