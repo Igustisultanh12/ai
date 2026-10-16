@@ -27,6 +27,7 @@ data class Message(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    chatId: String? = null,
     onNavigateBack: () -> Unit
 ) {
     var messageText by remember { mutableStateOf("") }

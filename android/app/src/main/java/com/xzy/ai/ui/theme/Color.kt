@@ -17,12 +17,19 @@ val SurfaceLight2 = Color(0xFFF3F4F6)
 val SurfaceLight3 = Color(0xFFE5E7EB)
 val SurfaceLight4 = Color(0xFFD1D5DB)
 
+// XZY Brand Colors - From Web (brutal/neo-brutalism aesthetic)
+val BrandLime = Color(0xFFCDFF00)       // Primary brand - electric lime
+val BrandViolet = Color(0xFF8B00FF)     // Secondary brand - vibrant violet  
+val BrandYellow = Color(0xFFFFD600)     // Tertiary brand - bright yellow
+val BrandCyan = Color(0xFF00E5FF)       // Accent - cyan
+val BrandHotPink = Color(0xFFFF006B)    // Accent - hot pink
+
 // Luminous Accent Colors - High Saturation
-val AccentCyan = Color(0xFF38BDF8)      // Primary accent - cyan/sky
+val AccentCyan = BrandCyan
 val AccentEmerald = Color(0xFF6EE7B7)   // Success/positive
-val AccentAmber = Color(0xFFE9A568)     // Warning/highlight
+val AccentAmber = BrandYellow            // Warning/highlight
 val AccentBlue = Color(0xFF3B6DFF)      // Info/link
-val AccentRose = Color(0xFFF472B6)      // Error/destructive
+val AccentRose = BrandHotPink           // Error/destructive
 
 // Muted Supporting Tints
 val MutedCyan = Color(0xFF0E7490)

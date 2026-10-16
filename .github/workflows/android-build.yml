@@ -28,13 +28,13 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build debug APK
-        working-directory: android
+        working-directory: ai/android
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Collect APK
         run: |
           mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/xzy-ai.apk
+          cp ai/android/app/build/outputs/apk/debug/app-debug.apk out/xzy-ai.apk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
