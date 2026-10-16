@@ -42,6 +42,8 @@ return [
         'chat_max_tokens' => (int) env('TOKENOMIXAI_CHAT_MAX_TOKENS', 16384),
         // Tool-call rounds per chat request before the browser auto-continues
         'agent_max_steps' => (int) env('TOKENOMIXAI_AGENT_MAX_STEPS', 50),
+        // Models sent through /v1/messages (native Anthropic tool_use/tool_result); empty = never
+        'messages_api_models' => env('TOKENOMIXAI_MESSAGES_API_MODELS', '/^claude/i'),
         // Characters of earlier chat sent with each request (older messages are shortened/dropped)
         'history_char_budget' => (int) env('TOKENOMIXAI_HISTORY_CHAR_BUDGET', 160000),
         // GitHub Actions monitoring: max wait per tool call, poll interval, and how long to wait for a run to appear

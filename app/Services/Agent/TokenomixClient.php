@@ -7,6 +7,7 @@ use App\Exceptions\UpstreamRequestException;
 use App\Exceptions\UpstreamRetryableException;
 use Exception;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -206,6 +207,252 @@ class TokenomixClient
      * @return array{tool_calls: array, finish_reason: ?string, aborted: bool}
      */
     public function streamChatCompletion(array $payload, callable $callback, ?callable $onTick = null): array
+    {
+        if ($this->useMessagesApi((string) ($payload['model'] ?? ''))) {
+            try {
+                return $this->streamMessages($payload, $callback, $onTick);
+            } catch (UpstreamRequestException $e) {
+                // Gateway/model without a working /v1/messages: use chat completions from now on
+                if (!in_array($e->status, [400, 401, 403, 404, 405, 415, 422], true)) {
+                    throw $e;
+                }
+                Cache::put($this->messagesApiOffKey((string) $payload['model']), true, now()->addMinutes(30));
+                Log::warning('TokenomixAI /v1/messages refused, falling back to /v1/chat/completions', [
+                    'model' => $payload['model'] ?? null,
+                    'status' => $e->status,
+                    'message' => mb_substr($e->getMessage(), 0, 300),
+                ]);
+            }
+        }
+
+        return $this->streamOpenAi($payload, $callback, $onTick);
+    }
+
+    /**
+     * Claude models go through the native Anthropic endpoint so tool results arrive
+     * as real tool_result blocks.
+     */
+    public function useMessagesApi(string $model): bool
+    {
+        $pattern = (string) config('services.tokenomix.messages_api_models', '/^claude/i');
+        return $pattern !== ''
+            && (bool) @preg_match($pattern, $model)
+            && !Cache::has($this->messagesApiOffKey($model));
+    }
+
+    protected function messagesApiOffKey(string $model): string
+    {
+        return 'tokenomix:messages_api_off:' . md5($this->baseUrl . '|' . $model);
+    }
+
+    /**
+     * Streaming call to /v1/messages (Anthropic format), returning the same structure as
+     * the chat-completions path: tool calls in OpenAI form and the finish reason.
+     */
+    protected function streamMessages(array $payload, callable $callback, ?callable $onTick = null): array
+    {
+        if (!$this->isConfigured()) {
+            throw new Exception('TokenomixAI API Key belum dikonfigurasi.');
+        }
+
+        $request = AnthropicFormat::toMessagesPayload($payload, (int) config('services.tokenomix.chat_max_tokens', 16384) ?: 16384);
+        $body = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($body === false) {
+            throw new Exception('Gagal menyusun permintaan ke TokenomixAI: ' . json_last_error_msg());
+        }
+
+        $ch = curl_init("{$this->baseUrl}/messages");
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $this->apiKey,
+            'x-api-key: ' . $this->apiKey,
+            'anthropic-version: 2023-06-01',
+            'Content-Type: application/json',
+            'Accept: text/event-stream',
+        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 0);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_LIMIT, 1);
+        curl_setopt($ch, CURLOPT_LOW_SPEED_TIME, 180);
+
+        $buffer = '';
+        $rawBody = '';
+        $streamStarted = false;
+        $aborted = false;
+        $done = false;
+        $retryAfter = null;
+        $stopReason = null;
+        $usage = ['prompt_tokens' => 0, 'completion_tokens' => 0];
+        $blocks = [];          // index => ['type' => 'tool_use'|'text', 'id', 'name', 'json']
+        $argChars = 0;
+        $lastTool = null;
+
+        if ($onTick) {
+            curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+            curl_setopt($ch, CURLOPT_XFERINFOFUNCTION, function () use (&$argChars, &$lastTool, $onTick) {
+                $onTick($argChars, $lastTool);
+                return 0;
+            });
+        }
+
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curlHandle, $header) use (&$retryAfter) {
+            if (stripos($header, 'Retry-After:') === 0) {
+                $retryAfter = trim(substr($header, 12));
+            }
+            return strlen($header);
+        });
+
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($curlHandle, $data) use (
+            &$buffer, &$rawBody, &$streamStarted, &$aborted, &$done, &$stopReason, &$usage, &$blocks, &$argChars, &$lastTool, $callback
+        ) {
+            if (curl_getinfo($curlHandle, CURLINFO_HTTP_CODE) >= 400) {
+                if (strlen($rawBody) < 16384) {
+                    $rawBody .= $data;
+                }
+                return strlen($data);
+            }
+
+            $buffer .= $data;
+            while (($pos = strpos($buffer, "\n")) !== false) {
+                $line = trim(substr($buffer, 0, $pos));
+                $buffer = substr($buffer, $pos + 1);
+                if (!str_starts_with($line, 'data:')) {
+                    continue; // "event:" lines repeat the type that is also inside data
+                }
+                $event = json_decode(trim(substr($line, 5)), true);
+                if (!is_array($event)) {
+                    continue;
+                }
+                $streamStarted = true;
+
+                switch ($event['type'] ?? '') {
+                    case 'error':
+                        $rawBody = json_encode($event);
+                        $aborted = true;
+                        return 0;
+                    case 'message_start':
+                        $u = $event['message']['usage'] ?? [];
+                        $usage['prompt_tokens'] = (int) ($u['input_tokens'] ?? 0) + (int) ($u['cache_read_input_tokens'] ?? 0) + (int) ($u['cache_creation_input_tokens'] ?? 0);
+                        $usage['completion_tokens'] = (int) ($u['output_tokens'] ?? 0);
+                        break;
+                    case 'content_block_start':
+                        $b = $event['content_block'] ?? [];
+                        $blocks[(int) ($event['index'] ?? count($blocks))] = [
+                            'type' => $b['type'] ?? 'text',
+                            'id' => $b['id'] ?? null,
+                            'name' => $b['name'] ?? null,
+                            'json' => '',
+                            'input' => $b['input'] ?? null,
+                        ];
+                        if (($b['type'] ?? '') === 'tool_use') {
+                            $lastTool = $b['name'] ?? null;
+                        }
+                        if (($b['type'] ?? '') === 'text' && ($b['text'] ?? '') !== '') {
+                            if ($callback($b['text'], false, null) === false) {
+                                $aborted = true;
+                                return 0;
+                            }
+                        }
+                        break;
+                    case 'content_block_delta':
+                        $d = $event['delta'] ?? [];
+                        $i = (int) ($event['index'] ?? 0);
+                        if (($d['type'] ?? '') === 'text_delta') {
+                            if ($callback((string) ($d['text'] ?? ''), false, null) === false) {
+                                $aborted = true;
+                                return 0;
+                            }
+                        } elseif (($d['type'] ?? '') === 'input_json_delta') {
+                            $piece = (string) ($d['partial_json'] ?? '');
+                            if (isset($blocks[$i])) {
+                                $blocks[$i]['json'] .= $piece;
+                            }
+                            $argChars += strlen($piece);
+                        }
+                        break;
+                    case 'message_delta':
+                        $stopReason = $event['delta']['stop_reason'] ?? $stopReason;
+                        if (isset($event['usage']['output_tokens'])) {
+                            $usage['completion_tokens'] = (int) $event['usage']['output_tokens'];
+                        }
+                        if (isset($event['usage']['input_tokens']) && $usage['prompt_tokens'] === 0) {
+                            $usage['prompt_tokens'] = (int) $event['usage']['input_tokens'];
+                        }
+                        break;
+                    case 'message_stop':
+                        $done = true;
+                        break;
+                }
+            }
+            return strlen($data);
+        });
+
+        $success = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($httpCode >= 400 || ($aborted && $rawBody !== '')) {
+            $json = json_decode($rawBody, true) ?: [];
+            $error = $json['error'] ?? [];
+            $status = $httpCode >= 400 ? $httpCode : 502;
+            $type = (string) ($error['type'] ?? $error['code'] ?? 'upstream_error');
+            $message = $this->describeError($status, $type, (string) ($error['message'] ?? ($rawBody ?: 'Tidak ada detail dari gateway.')), $retryAfter);
+
+            if (in_array($status, [429, 500, 502, 503, 504, 529], true) || in_array($type, ['overloaded_error', 'api_error', 'rate_limit_error', 'upstream_unavailable'], true)) {
+                throw new UpstreamRetryableException($message, is_numeric($retryAfter) ? (int) $retryAfter : null);
+            }
+
+            Log::warning('TokenomixAI request rejected', [
+                'endpoint' => 'messages',
+                'status' => $status,
+                'code' => $type,
+                'message' => mb_substr((string) ($error['message'] ?? $rawBody), 0, 600),
+                'model' => $payload['model'] ?? null,
+                'tools' => count($request['tools'] ?? []),
+                'body_bytes' => strlen($body),
+                'payload' => MessageSanitizer::describe($payload['messages'] ?? []),
+            ]);
+            throw new UpstreamRequestException($message, $status, $type);
+        }
+
+        if ($aborted) {
+            return ['tool_calls' => [], 'finish_reason' => 'stop', 'aborted' => true];
+        }
+
+        if (!$success || (!$done && $stopReason === null)) {
+            throw new UpstreamRetryableException(
+                ($streamStarted ? 'Koneksi ke TokenomixAI terputus di tengah jawaban: ' : 'Gagal terhubung ke TokenomixAI: ')
+                . ($curlError ?: "HTTP {$httpCode}")
+            );
+        }
+
+        $toolCalls = [];
+        ksort($blocks);
+        foreach ($blocks as $b) {
+            if ($b['type'] !== 'tool_use' || empty($b['name'])) {
+                continue;
+            }
+            $args = $b['json'] !== '' ? $b['json'] : (is_array($b['input']) && $b['input'] !== [] ? json_encode($b['input'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '{}');
+            $toolCalls[] = [
+                'id' => $b['id'] ?: 'toolu_' . bin2hex(random_bytes(6)),
+                'type' => 'function',
+                'function' => ['name' => $b['name'], 'arguments' => $args],
+            ];
+        }
+
+        $callback('', false, $usage['prompt_tokens'] || $usage['completion_tokens'] ? $usage : null);
+        $callback('', true, null);
+
+        return ['tool_calls' => $toolCalls, 'finish_reason' => AnthropicFormat::finishReason($stopReason), 'aborted' => false];
+    }
+
+    /**
+     * Streaming call to /v1/chat/completions (OpenAI format).
+     */
+    protected function streamOpenAi(array $payload, callable $callback, ?callable $onTick = null): array
     {
         if (!$this->isConfigured()) {
             throw new Exception('TokenomixAI API Key belum dikonfigurasi.');
