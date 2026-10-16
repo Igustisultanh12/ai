@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - android-app
+      - main
     tags:
       - 'v*.*.*'
   pull_request:
     branches:
       - android-app
+      - main
   workflow_dispatch:
 
 jobs:
@@ -19,6 +21,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
         
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -27,43 +31,52 @@ jobs:
           java-version: '17'
           cache: 'gradle'
           
-      - name: Grant execute permission for gradlew
-        run: chmod +x android/gradlew
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
         
+      - name: Grant execute permission for gradlew
+        run: |
+          cd android
+          chmod +x gradlew
+          
+      - name: Validate Gradle Wrapper
+        run: |
+          cd android
+          ./gradlew --version
+          
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+            
       - name: Build Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --no-daemon
           
       - name: Build Release APK
         run: |
           cd android
-          ./gradlew assembleRelease --stacktrace
-          
-      - name: Sign APK
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: android/app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "34.0.0"
+          ./gradlew assembleRelease --stacktrace --no-daemon
           
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: xzy-ai-debug
+          name: xzy-ai-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30
           
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: xzy-ai-release
+          name: xzy-ai-release-${{ github.sha }}
           path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 90
 
   release:
     name: Create GitHub Release
@@ -81,13 +94,20 @@ jobs:
       - name: Download Release APK
         uses: actions/download-artifact@v4
         with:
-          name: xzy-ai-release
+          name: xzy-ai-release-${{ github.sha }}
           path: ./apk
           
       - name: Get version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
         
+      - name: Rename APK
+        run: |
+          cd apk
+          for file in *.apk; do
+            mv "$file" "xzy-ai-${{ steps.get_version.outputs.VERSION }}.apk"
+          done
+          
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -98,24 +118,41 @@ jobs:
             ## 🎉 XZY AI Android Release ${{ steps.get_version.outputs.VERSION }}
             
             ### 📦 Download
-            Unduh APK di bawah ini dan install di perangkat Android Anda (min. Android 8.0)
+            Unduh APK di bawah ini dan install di perangkat Android Anda
+            
+            **Minimum Requirements:**
+            - Android 8.0 (API 26) atau lebih tinggi
+            - ~50MB storage
+            - Internet connection
             
             ### ✨ Features
-            - 🤖 Multi AI Models (Claude, GPT-4, Gemini, LLama)
-            - 💬 Real-time chat dengan animasi smooth
-            - 🎨 Colorful UI dengan Material Design 3
-            - 🌙 Dark mode support
-            - 💾 Offline conversation storage
-            - 🔐 Secure authentication
+            - 🤖 **Multi AI Models** - Claude, GPT-4, Gemini, LLama
+            - 💬 **Real-time Chat** - Dengan animasi smooth & typing indicator
+            - 🎨 **Colorful UI** - Material Design 3 dengan vibrant colors
+            - 🌙 **Dark Mode** - Eye-friendly dark theme
+            - 💾 **Offline Storage** - Conversation history tersimpan lokal
+            - 🔐 **Secure Auth** - Token-based authentication
+            - 📱 **Responsive** - Optimized untuk semua ukuran layar
+            - ⚡ **Fast & Smooth** - Built dengan Kotlin & Jetpack Compose
             
             ### 🛠️ Tech Stack
-            - Kotlin 1.9+
-            - Jetpack Compose
-            - Material Design 3
-            - MVVM Architecture
+            - **Language:** Kotlin 1.9+
+            - **UI:** Jetpack Compose + Material Design 3
+            - **Architecture:** MVVM + Clean Architecture
+            - **DI:** Hilt
+            - **Networking:** Retrofit + OkHttp
+            - **Database:** Room
+            - **Async:** Coroutines + Flow
             
-            ### 📝 Changelog
-            See full changelog in the commits.
+            ### 📝 Installation
+            1. Download APK file
+            2. Enable "Install from Unknown Sources" di settings
+            3. Install APK
+            4. Login dengan akun XZY Anda
+            5. Mulai chat dengan AI!
+            
+            ### 🐛 Bug Reports
+            Jika menemukan bug, silakan buat issue di repository ini.
             
             ---
             Built with ❤️ by [@Igustisultanh12](https://github.com/Igustisultanh12)
