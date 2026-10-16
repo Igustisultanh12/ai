@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Services\GitHub\GitHubService;
 use App\Services\Sandbox\WorkspaceManager;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -162,6 +163,18 @@ class ChatToolbox
                 default => ['error' => "Tool tidak dikenal: {$name}"],
             };
         } catch (Throwable $e) {
+            // Every failed agent action lands in storage/logs/laravel.log (no file contents, no tokens)
+            Log::warning('Chat tool failed', [
+                'tool' => $name,
+                'user_id' => $user->id,
+                'conversation_id' => $conversation->id,
+                'repo' => $args['repo'] ?? null,
+                'name' => $args['name'] ?? null,
+                'branch' => $args['branch'] ?? null,
+                'paths' => array_slice(array_map(fn ($f) => is_array($f) ? ($f['path'] ?? null) : $f, (array) ($args['files'] ?? $args['paths'] ?? [])), 0, 20),
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+            ]);
             return ['error' => $e->getMessage()];
         }
     }

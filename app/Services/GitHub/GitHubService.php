@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Auth\AuditService;
 use Exception;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class GitHubService
 {
@@ -601,12 +602,33 @@ class GitHubService
             throw new Exception("Nama repositori tidak valid: {$name}");
         }
 
-        $res = Http::withHeaders([
+        $http = fn () => Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
             'Accept' => 'application/vnd.github+json',
             'X-GitHub-Api-Version' => '2022-11-28',
             'User-Agent' => 'XZY-Platform',
-        ])->timeout(30)->post('https://api.github.com/user/repos', array_filter([
+        ])->timeout(30);
+
+        // Already there (e.g. the user created it by hand)? Reuse it instead of failing.
+        $login = (string) ($user->githubConnection?->github_username ?? '');
+        if ($login !== '' && $login !== 'unknown') {
+            $existing = $http()->get("https://api.github.com/repos/{$login}/{$name}");
+            if ($existing->successful()) {
+                Log::info('GitHub create repo: repository already exists, reusing it', [
+                    'user_id' => $user->id,
+                    'repo' => $existing->json('full_name'),
+                ]);
+                return [
+                    'repo' => $existing->json('full_name'),
+                    'url' => $existing->json('html_url'),
+                    'default_branch' => $existing->json('default_branch') ?: 'main',
+                    'private' => (bool) $existing->json('private'),
+                    'already_existed' => true,
+                ];
+            }
+        }
+
+        $res = $http()->post('https://api.github.com/user/repos', array_filter([
             'name' => $name,
             'private' => $private,
             'description' => $description,
@@ -614,9 +636,34 @@ class GitHubService
         ], fn ($v) => $v !== null));
 
         if (!$res->successful()) {
+            $tokenType = $this->tokenType($token);
             $msg = $res->json('errors.0.message') ?? $res->json('message') ?? $res->body();
-            if ($res->status() === 403) {
-                $msg .= ' (token perlu izin membuat repo: scope "repo" untuk classic token, atau "Administration: Read and write" untuk fine-grained token)';
+
+            // Full diagnostics for storage/logs/laravel.log (never the token itself)
+            Log::warning('GitHub create repo failed', [
+                'user_id' => $user->id,
+                'github_username' => $login ?: null,
+                'repo_name' => $name,
+                'private' => $private,
+                'status' => $res->status(),
+                'message' => $res->json('message'),
+                'errors' => $res->json('errors'),
+                'documentation_url' => $res->json('documentation_url'),
+                'token_type' => $tokenType,
+                'token_scopes' => $res->header('X-OAuth-Scopes') ?: null,
+                'accepted_permissions' => $res->header('X-Accepted-GitHub-Permissions') ?: null,
+                'accepted_oauth_scopes' => $res->header('X-Accepted-OAuth-Scopes') ?: null,
+                'github_request_id' => $res->header('X-GitHub-Request-Id') ?: null,
+            ]);
+
+            if (in_array($res->status(), [401, 403, 404], true)) {
+                // GitHub answers 404 (not 403) when the token may not create repositories
+                $msg .= $tokenType === 'fine-grained'
+                    ? '. Token fine-grained kamu tidak diizinkan membuat repo baru. Di GitHub > Settings > Developer settings > Fine-grained tokens, edit token: '
+                        . 'Repository access = "All repositories" dan Repository permissions > Administration = "Read and write" (juga Contents = "Read and write"). '
+                        . 'Atau buat repo-nya manual di https://github.com/new?name=' . rawurlencode($name) . ' lalu kirim link-nya, agent akan push ke sana.'
+                    : '. Token kamu tidak punya izin membuat repo (classic token perlu scope "repo"). '
+                        . 'Perbarui token di Pengaturan, atau buat repo-nya manual di https://github.com/new?name=' . rawurlencode($name) . ' lalu kirim link-nya.';
             }
             throw new Exception("Gagal membuat repositori {$name} (HTTP {$res->status()}): {$msg}");
         }
@@ -631,6 +678,20 @@ class GitHubService
             'default_branch' => $res->json('default_branch') ?: 'main',
             'private' => (bool) $res->json('private'),
         ];
+    }
+
+    /**
+     * Kind of GitHub token, judged from its public prefix only.
+     */
+    protected function tokenType(string $token): string
+    {
+        return match (true) {
+            str_starts_with($token, 'github_pat_') => 'fine-grained',
+            str_starts_with($token, 'ghp_') => 'classic',
+            str_starts_with($token, 'gho_') => 'oauth',
+            str_starts_with($token, 'ghs_'), str_starts_with($token, 'ghu_') => 'github-app',
+            default => 'unknown',
+        };
     }
 
     /**
