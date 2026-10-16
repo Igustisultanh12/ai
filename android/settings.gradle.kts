@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "XzyAI"
+rootProject.name = "XZY AI"
 include(":app")

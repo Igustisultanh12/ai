@@ -1,0 +1,45 @@
+<resources>
+    <string name="app_name">XZY AI</string>
+    
+    <!-- Auth -->
+    <string name="login">Masuk</string>
+    <string name="register">Daftar</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="name">Nama</string>
+    <string name="confirm_password">Konfirmasi Password</string>
+    <string name="forgot_password">Lupa password?</string>
+    <string name="no_account">Belum punya akun?</string>
+    <string name="have_account">Sudah punya akun?</string>
+    <string name="logout">Keluar</string>
+    
+    <!-- Chat -->
+    <string name="chat">Chat</string>
+    <string name="conversations">Percakapan</string>
+    <string name="new_conversation">Percakapan Baru</string>
+    <string name="type_message">Ketik pesan…</string>
+    <string name="send">Kirim</string>
+    <string name="stop_generation">Berhenti</string>
+    <string name="no_conversations">Belum ada percakapan</string>
+    <string name="delete_conversation">Hapus percakapan</string>
+    <string name="select_model">Pilih Model</string>
+    
+    <!-- Projects -->
+    <string name="projects">Proyek</string>
+    <string name="new_project">Proyek Baru</string>
+    <string name="project_name">Nama Proyek</string>
+    <string name="no_projects">Belum ada proyek</string>
+    
+    <!-- Common -->
+    <string name="loading">Memuat…</string>
+    <string name="error">Terjadi kesalahan</string>
+    <string name="retry">Coba Lagi</string>
+    <string name="cancel">Batal</string>
+    <string name="save">Simpan</string>
+    <string name="delete">Hapus</string>
+    <string name="edit">Edit</string>
+    <string name="search">Cari…</string>
+    <string name="settings">Pengaturan</string>
+    <string name="profile">Profil</string>
+    <string name="about">Tentang</string>
+</resources>
