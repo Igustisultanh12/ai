@@ -461,8 +461,22 @@ const deleteConversation = async (id: string) => {
     }
 };
 
+// Long agent jobs: when the server reports its per-request step limit, continue by itself
+const MAX_AUTO_CONTINUE = 5;
+const autoContinueCount = ref(0);
+let autoContinueNext = false;
+let hitStepLimit = false;
+
 const sendMessage = async () => {
     if (!inputContent.value.trim() || isStreaming.value) return;
+
+    // A message typed by the user starts a fresh auto-continue budget
+    if (autoContinueNext) {
+        autoContinueNext = false;
+    } else {
+        autoContinueCount.value = 0;
+    }
+    hitStepLimit = false;
 
     if (!activeConvId.value) {
         const newId = await startNewConversation();
@@ -576,7 +590,11 @@ const sendMessage = async () => {
                                 ? `${TOOL_WRITING_LABEL[parsed.tool] || 'Menyiapkan aksi'} · ${(parsed.chars / 1024).toFixed(1)} KB`
                                 : '';
                             scrollToBottom();
+                        } else if (parsed.event === 'step_limit') {
+                            hitStepLimit = true;
                         } else if (parsed.event === 'stopped') {
+                            hitStepLimit = false;
+                            autoContinueCount.value = MAX_AUTO_CONTINUE;
                             toast.info(parsed.message || 'Generasi dihentikan.');
                         } else if (parsed.error) {
                             streamError = parsed.error;
@@ -588,6 +606,7 @@ const sendMessage = async () => {
 
         // Commit streamed message to local list
         if (streamError) {
+            hitStepLimit = false;
             toast.error(streamError);
         }
         messages.value.push({
@@ -636,7 +655,26 @@ const sendMessage = async () => {
         }
         notifyUsageChanged();
         scrollToBottom();
+        scheduleAutoContinue(convId);
     }
+};
+
+const scheduleAutoContinue = (convId: string) => {
+    if (!hitStepLimit) return;
+    hitStepLimit = false;
+    if (autoContinueCount.value >= MAX_AUTO_CONTINUE) {
+        toast.info('Pekerjaan masih panjang. Kirim "lanjutkan" untuk meneruskan.');
+        return;
+    }
+    autoContinueCount.value++;
+    toast.info(`Melanjutkan otomatis (${autoContinueCount.value}/${MAX_AUTO_CONTINUE})...`);
+    window.setTimeout(() => {
+        // Only if the user is still on this conversation and has not typed something else
+        if (activeConvId.value !== convId || isStreaming.value || inputContent.value.trim()) return;
+        inputContent.value = 'lanjutkan';
+        autoContinueNext = true;
+        sendMessage();
+    }, 1500);
 };
 
 
@@ -695,6 +733,9 @@ const waitForServerResult = async (convId: string, startedAt?: number) => {
 
 const stopGeneration = async () => {
     if (!activeConvId.value) return;
+    // Stopping also cancels any pending automatic "lanjutkan"
+    hitStepLimit = false;
+    autoContinueCount.value = MAX_AUTO_CONTINUE;
     try {
         await api.post(`/api/conversations/${activeConvId.value}/stop`);
         toast.info('Permintaan pembatalan dikirim.');

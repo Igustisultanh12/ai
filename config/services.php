@@ -40,6 +40,8 @@ return [
         'retry_base_seconds' => (int) env('TOKENOMIXAI_RETRY_BASE_SECONDS', 2),
         // Output token limit for chat/agent replies (0 = provider default)
         'chat_max_tokens' => (int) env('TOKENOMIXAI_CHAT_MAX_TOKENS', 16384),
+        // Tool-call rounds per chat request before the browser auto-continues
+        'agent_max_steps' => (int) env('TOKENOMIXAI_AGENT_MAX_STEPS', 50),
     ],
 
     'rar' => [

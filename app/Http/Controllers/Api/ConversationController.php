@@ -41,6 +41,8 @@ class ConversationController extends Controller
     public const CHAT_SYSTEM_PROMPT = <<<'PROMPT'
 Kamu adalah asisten pemrograman AI XZY. Jawab dalam bahasa yang dipakai pengguna.
 Gaya jawaban: rapi dengan markdown, tanpa emoji atau emotikon.
+Di antara pemanggilan tool, tulis paling banyak satu kalimat singkat tentang langkah berikutnya, atau tidak sama sekali; jangan menulis "..." saja.
+Untuk pekerjaan besar yang butuh banyak langkah, kerjakan terus sampai selesai tanpa menunggu konfirmasi; ketika pesan pengguna hanya "lanjutkan", teruskan dari langkah terakhir tanpa mengulang yang sudah berhasil.
 Jika kamu menulis isi sebuah berkas kode, beri label path relatif berkas tersebut pada pembuka blok kode dengan format ```bahasa:path/ke/berkas.ext (contoh: ```php:app/Http/Controllers/UserController.php), dan tulis isi berkas secara lengkap, bukan potongan, agar pengguna bisa langsung push ke GitHub dari chat.
 Untuk potongan kode contoh yang bukan berkas utuh, gunakan blok kode biasa tanpa path.
 
@@ -55,6 +57,14 @@ Kamu punya tool untuk GitHub dan proyek XZY, dan kamu BISA membaca repo, clone, 
 - Jika github_list_files mengembalikan "can_push": false, JANGAN menulis berkas: beri tahu pengguna bahwa token GitHub-nya belum punya izin menulis ke repo itu dan cara memperbaikinya (dari pesan error tool). Jika tool push gagal karena izin token, jangan coba ulang dengan format URL lain; jelaskan penyebab sebenarnya.
 - Jangan pernah mengaku sudah push/clone tanpa hasil tool yang sukses. Setelah push, sebutkan repo, branch, dan link commit dari hasil tool. Jika tool gagal, jelaskan penyebabnya apa adanya.
 PROMPT;
+
+    /**
+     * True for text that carries no content, such as "...", "…" or whitespace.
+     */
+    public static function isFiller(string $text): bool
+    {
+        return (bool) preg_match('/^[\s.…·]*$/u', $text);
+    }
 
     public function __construct(
         TokenomixClient $client,
@@ -336,7 +346,8 @@ PROMPT;
             $stopRequestedKey = "stream_stop:{$conversation->id}";
             $stopped = false;
             $messages = $messagesHistory;
-            $maxSteps = 15;
+            // Tool-call rounds per request; the browser continues automatically after this
+            $maxSteps = max(5, (int) config('services.tokenomix.agent_max_steps', 50));
             $maxTokens = (int) config('services.tokenomix.chat_max_tokens', 16384) ?: null;
 
             try {
@@ -350,6 +361,7 @@ PROMPT;
 
                 for ($step = 1; $step <= $maxSteps; $step++) {
                     $turnText = '';
+                    $pendingFiller = '';
                     $reportedUsage = null;
 
                     $messages = $toolbox->compactHistory($messages);
@@ -368,7 +380,7 @@ PROMPT;
                         $payload['tool_choice'] = 'auto';
                     }
 
-                    $onChunk = function ($chunkText, $isDone, $usage) use (&$fullContent, &$turnText, &$reportedUsage, &$stopped, $stopRequestedKey, $send) {
+                    $onChunk = function ($chunkText, $isDone, $usage) use (&$fullContent, &$turnText, &$pendingFiller, &$reportedUsage, &$stopped, $stopRequestedKey, $send) {
                         if (Cache::has($stopRequestedKey)) {
                             $stopped = true;
                             $send(['event' => 'stopped', 'message' => 'Generasi dibatalkan oleh pengguna.']);
@@ -378,6 +390,14 @@ PROMPT;
                             $reportedUsage = $usage;
                         }
                         if (!$isDone && $chunkText !== '') {
+                            // Some models print only "..." between tool calls; hold such filler back
+                            // and drop it unless real text follows in the same step
+                            if ($turnText === '' && self::isFiller($pendingFiller . $chunkText)) {
+                                $pendingFiller .= $chunkText;
+                                return true;
+                            }
+                            $chunkText = $pendingFiller . $chunkText;
+                            $pendingFiller = '';
                             $turnText .= $chunkText;
                             $fullContent .= $chunkText;
                             $send(['content' => $chunkText]);
@@ -398,6 +418,7 @@ PROMPT;
                             // Drop the partial answer of this step and try the same step again
                             $fullContent = $stepStartContent;
                             $turnText = '';
+                            $pendingFiller = '';
                             $reportedUsage = null;
                             $base = (int) config('services.tokenomix.retry_base_seconds', 2);
                             $wait = min(30, max($e->retryAfterSeconds ?? 0, $base * 2 ** ($attempt - 1)));
@@ -532,9 +553,11 @@ PROMPT;
                     }
 
                     if ($step === $maxSteps) {
-                        $note = "\n\n_Batas langkah otomatis tercapai. Kirim \"lanjutkan\" untuk meneruskan._";
+                        $note = "\n\n_Tahap ini selesai ({$maxSteps} langkah). Pekerjaan dilanjutkan otomatis; jika berhenti, kirim \"lanjutkan\"._";
                         $fullContent .= $note;
                         $send(['content' => $note]);
+                        // Tells the browser to send "lanjutkan" by itself
+                        $send(['event' => 'step_limit', 'steps' => $maxSteps]);
                     }
                 }
 

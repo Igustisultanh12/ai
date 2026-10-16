@@ -260,4 +260,31 @@ class ChatAgentToolsTest extends TestCase
 
         Http::assertNotSent(fn ($req) => str_contains($req->url(), '/git/blobs'));
     }
+
+    public function test_step_limit_signals_auto_continue_and_drops_dot_filler(): void
+    {
+        config(['services.tokenomix.agent_max_steps' => 5]);
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'Percakapan Baru', 'model' => 'glm-5.1']);
+        $this->fakeRepo();
+
+        $turns = [];
+        for ($i = 0; $i < 6; $i++) {
+            $turns[] = ['text' => '...', 'tools' => [['github_list_files', ['repo' => 'budi/web']]]];
+        }
+        $client = new ScriptedTokenomixClient($turns);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $res = $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'kerjakan semua']);
+        $body = $res->streamedContent();
+
+        $this->assertCount(5, $client->calls);
+        $this->assertStringContainsString('"event":"step_limit"', $body);
+        $this->assertStringNotContainsString('"content":"..."', $body);
+
+        $reply = Message::where('conversation_id', $conv->id)->where('role', 'assistant')->first();
+        $this->assertSame('completed', $reply->status);
+        $this->assertStringNotContainsString("\n...", $reply->content);
+        $this->assertStringContainsString('dilanjutkan otomatis', $reply->content);
+    }
 }
