@@ -10,79 +10,59 @@ on:
 
 jobs:
   build:
-    name: Build APK
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
-          
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        
-      - name: Grant execute permission for gradlew
-        run: |
-          cd android
-          chmod +x gradlew
-          
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          
-      - name: Build Debug APK
-        run: |
-          cd android
-          ./gradlew assembleDebug --stacktrace --no-daemon
-          
-      - name: Build Release APK
-        run: |
-          cd android
-          ./gradlew assembleRelease --stacktrace --no-daemon
-          
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-${{ github.sha }}
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
-          
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/release/app-release-unsigned.apk
-          body: |
-            ## 🎉 XZY AI Android App Release
-            
-            ### 📱 Download APK
-            - **app-debug.apk** - Debug version (with logging)
-            - **app-release-unsigned.apk** - Release version (optimized)
-            
-            ### ✨ Features
-            - Multi AI Models (Claude, GPT-4, Gemini, LLama)
-            - Beautiful colorful UI with animations
-            - Real-time chat with markdown support
-            - Offline support with local database
-            - Material Design 3
-            
-            ### 📋 Requirements
-            - Android 8.0 (API 26) or higher
-            - Internet connection
-            
-            ### 🔗 Server
-            - xyzku.my.id
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+
+    - name: Grant execute permission for gradlew
+      run: |
+        cd android
+        chmod +x gradlew
+
+    - name: Accept Android SDK licenses
+      run: |
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+    - name: Build Debug APK
+      run: |
+        cd android
+        ./gradlew assembleDebug --stacktrace
+
+    - name: Build Release APK
+      run: |
+        cd android
+        ./gradlew assembleRelease --stacktrace
+
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-${{ github.sha }}
+        path: android/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release-${{ github.sha }}
+        path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+        retention-days: 30
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          android/app/build/outputs/apk/debug/app-debug.apk
+          android/app/build/outputs/apk/release/app-release-unsigned.apk
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
