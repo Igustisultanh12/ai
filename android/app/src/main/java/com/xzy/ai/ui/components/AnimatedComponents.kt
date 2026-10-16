@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.xzy.ai.ui.theme.*
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.random.Random
 
 /**
  * Animated Gradient Button dengan ripple effect

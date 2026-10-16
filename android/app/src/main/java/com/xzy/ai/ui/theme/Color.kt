@@ -129,6 +129,19 @@ val VibrantPink = AccentRose
 val DeepPurple = Color(0xFF8B5CF6)
 val NeonOrange = AccentAmber
 
+// Dark theme aliases
+val XzyPrimaryDark = AccentCyan
+val XzySecondaryDark = AccentAmber
+val XzyTertiaryDark = AccentEmerald
+val SurfaceDark = Surface0
+val SurfaceDimDark = Surface1
+val SurfaceBrightDark = Surface3
+
+// Light theme aliases
+val SurfaceLight = SurfaceLight0
+val SurfaceDim = SurfaceLight1
+val SurfaceBright = SurfaceLight2
+
 // Gradient aliases
 val GradientStart = Color(0xFF06B6D4)
 val GradientMiddle = Color(0xFF8B5CF6)
