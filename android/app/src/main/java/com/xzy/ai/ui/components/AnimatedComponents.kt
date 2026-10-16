@@ -173,7 +173,7 @@ fun PulsatingFAB(
     onClick: () -> Unit,
     icon: ImageVector,
     modifier: Modifier = Modifier,
-    containerColor: Color = ElectricPurple,
+    containerColor: Color = DeepPurple,
     contentColor: Color = Color.White
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -221,9 +221,9 @@ fun PulsatingFAB(
 fun WaveBackground(
     modifier: Modifier = Modifier,
     colors: List<Color> = listOf(
-        BrightCyan.copy(alpha = 0.1f),
-        ElectricPurple.copy(alpha = 0.1f),
-        VividMagenta.copy(alpha = 0.1f)
+        AccentCyan.copy(alpha = 0.1f),
+        DeepPurple.copy(alpha = 0.1f),
+        VibrantPink.copy(alpha = 0.1f)
     )
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "wave")
@@ -286,7 +286,7 @@ data class Particle(
 fun ParticleField(
     modifier: Modifier = Modifier,
     particleCount: Int = 30,
-    colors: List<Color> = listOf(BrightCyan, ElectricPurple, VividMagenta, SunsetOrange)
+    colors: List<Color> = listOf(AccentCyan, DeepPurple, VibrantPink, AccentAmber)
 ) {
     var particles by remember { mutableStateOf<List<Particle>>(emptyList()) }
     
@@ -346,7 +346,7 @@ fun ParticleField(
 @Composable
 fun TypingIndicator(
     modifier: Modifier = Modifier,
-    color: Color = ElectricPurple
+    color: Color = DeepPurple
 ) {
     Row(
         modifier = modifier,
@@ -383,7 +383,7 @@ fun BounceIconButton(
     onClick: () -> Unit,
     icon: ImageVector,
     modifier: Modifier = Modifier,
-    tint: Color = ElectricPurple,
+    tint: Color = DeepPurple,
     contentDescription: String? = null
 ) {
     var isPressed by remember { mutableStateOf(false) }
@@ -424,7 +424,7 @@ fun BounceIconButton(
 @Composable
 fun GlowingCard(
     modifier: Modifier = Modifier,
-    glowColor: Color = ElectricPurple,
+    glowColor: Color = DeepPurple,
     content: @Composable () -> Unit
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "glow")
