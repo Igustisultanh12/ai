@@ -306,12 +306,12 @@ fun ParticleField(
         if (particles.isEmpty()) {
             particles = List(particleCount) {
                 Particle(
-                    x = (0..size.width.toInt()).random().toFloat(),
-                    y = (0..size.height.toInt()).random().toFloat(),
-                    radius = (2..6).random().toFloat(),
-                    alpha = (0.3f..0.8f).random(),
-                    speedX = (-1f..1f).random(),
-                    speedY = (-1f..1f).random(),
+                    x = Random.nextInt(0, size.width.toInt()).toFloat(),
+                    y = Random.nextInt(0, size.height.toInt()).toFloat(),
+                    radius = Random.nextInt(2, 7).toFloat(),
+                    alpha = 0.3f + Random.nextFloat() * 0.5f,
+                    speedX = -1f + Random.nextFloat() * 2f,
+                    speedY = -1f + Random.nextFloat() * 2f,
                     color = colors.random()
                 )
             }
