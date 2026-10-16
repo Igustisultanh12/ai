@@ -7,6 +7,9 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Project;
 use App\Exceptions\UpstreamRetryableException;
+use Illuminate\Support\Facades\Log;
+use App\Services\Agent\MessageSanitizer;
+use App\Exceptions\UpstreamRequestException;
 use App\Models\ModelMultiplier;
 use App\Services\Agent\ChatToolbox;
 use App\Services\Agent\ModelCatalogService;
@@ -58,6 +61,70 @@ Kamu punya tool untuk GitHub dan proyek XZY, dan kamu BISA membaca repo, clone, 
 - Jika github_list_files mengembalikan "can_push": false, JANGAN menulis berkas: beri tahu pengguna bahwa token GitHub-nya belum punya izin menulis ke repo itu dan cara memperbaikinya (dari pesan error tool). Jika tool push gagal karena izin token, jangan coba ulang dengan format URL lain; jelaskan penyebab sebenarnya.
 - Jangan pernah mengaku sudah push/clone tanpa hasil tool yang sukses. Setelah push, sebutkan repo, branch, dan link commit dari hasil tool. Jika tool gagal, jelaskan penyebabnya apa adanya.
 PROMPT;
+
+    /**
+     * Gateway error that really says the model cannot use tools (not just any message
+     * that mentions "tool", like the generic 400 "malformed tool/function schema" hint).
+     */
+    public static function saysToolsUnsupported(string $message): bool
+    {
+        return (bool) preg_match('/(does not|doesn\'t|not) support[a-z]* (tool|function)|(tools?|function calling|functions) (is|are) not supported|unsupported (parameter|field)[^.]{0,40}\btools?\b/i', $message);
+    }
+
+    /**
+     * Keep the chat history within a character budget (newest first); very long
+     * conversations otherwise grow past what the provider accepts.
+     */
+    protected function limitHistory(array $history): array
+    {
+        $budget = max(20000, (int) config('services.tokenomix.history_char_budget', 160000));
+        $kept = [];
+        $used = 0;
+        foreach (array_reverse($history) as $i => $m) {
+            $len = strlen($m['content']);
+            if ($i > 0 && $used + $len > $budget) {
+                // Older messages: keep a shortened copy only while it still fits
+                $short = mb_strcut($m['content'], 0, 1500, 'UTF-8');
+                if ($used + strlen($short) > $budget) {
+                    break;
+                }
+                $m['content'] = $short . "\n...[pesan lama diringkas]";
+                $len = strlen($m['content']);
+            }
+            $kept[] = $m;
+            $used += $len;
+        }
+        $kept = array_reverse($kept);
+        // History must start with a user turn
+        while ($kept && $kept[0]['role'] !== 'user') {
+            array_shift($kept);
+        }
+        return $kept;
+    }
+
+    /**
+     * Other refused requests: output size or tools not supported. Adjusts the payload and
+     * returns true when the step should be retried.
+     */
+    protected function handleRequestError(UpstreamRequestException $e, ?int &$maxTokens, bool &$toolsEnabled, array &$payload, array &$messages, string $turnText): bool
+    {
+        if ($turnText !== '') {
+            return false;
+        }
+        if ($maxTokens && preg_match('/max_tokens|max_completion_tokens|output tokens|maximum.*tokens/i', $e->getMessage())) {
+            $maxTokens = null;
+            unset($payload['max_tokens']);
+            return true;
+        }
+        if ($toolsEnabled && self::saysToolsUnsupported($e->getMessage())) {
+            $toolsEnabled = false;
+            unset($payload['tools'], $payload['tool_choice']);
+            $messages = MessageSanitizer::withoutTools($messages);
+            $payload['messages'] = $messages;
+            return true;
+        }
+        return false;
+    }
 
     /**
      * True for text that carries no content, such as "...", "…" or whitespace.
@@ -279,6 +346,7 @@ PROMPT;
             ->map(fn ($m) => ['role' => $m->role, 'content' => (string) $m->content])
             ->values()
             ->toArray();
+        $messagesHistory = $this->limitHistory($messagesHistory);
 
         $systemPrompt = trim(self::CHAT_SYSTEM_PROMPT . "\n\n" . $this->runtimeContext($conversation, $user) . "\n\n" . (string) $conversation->system_prompt);
         array_unshift($messagesHistory, ['role' => 'system', 'content' => $systemPrompt]);
@@ -349,6 +417,7 @@ PROMPT;
             $messages = $messagesHistory;
             // Tool-call rounds per request; the browser continues automatically after this
             $maxSteps = max(5, (int) config('services.tokenomix.agent_max_steps', 50));
+            $reducedRetry = false;
             $maxTokens = (int) config('services.tokenomix.chat_max_tokens', 16384) ?: null;
 
             try {
@@ -442,6 +511,34 @@ PROMPT;
                             if ($stopped) {
                                 break;
                             }
+                        } catch (UpstreamRequestException $e) {
+                            // 400 "request rejected": resend once with a cleaned, smaller history
+                            // (old tool results and file contents shortened) instead of failing the job
+                            if ($turnText === '' && !$reducedRetry && in_array($e->status, [400, 413, 422], true)) {
+                                $reducedRetry = true;
+                                $messages = MessageSanitizer::reduce($messages);
+                                $payload['messages'] = $messages;
+                                Log::info('Chat: retrying rejected request with reduced history', [
+                                    'conversation_id' => $conversation->id,
+                                    'step' => $step,
+                                    'payload' => MessageSanitizer::describe($messages),
+                                ]);
+                                $send([
+                                    'event' => 'retry',
+                                    'attempt' => 2,
+                                    'max' => 2,
+                                    'wait' => 0,
+                                    'message' => 'Permintaan ditolak gateway (HTTP ' . $e->status . '), mencoba lagi dengan riwayat yang diringkas',
+                                    'content' => $fullContent,
+                                ]);
+                                $attempt--;
+                                continue;
+                            }
+                            if (!$this->handleRequestError($e, $maxTokens, $toolsEnabled, $payload, $messages, $turnText)) {
+                                throw $e;
+                            }
+                            $attempt--;
+                            continue;
                         } catch (Exception $e) {
                             // Model rejects the requested output size: retry with the provider default
                             if ($maxTokens && $turnText === '' && preg_match('/max_tokens|max_completion_tokens|output tokens|maximum.*tokens/i', $e->getMessage())) {
@@ -451,9 +548,11 @@ PROMPT;
                                 continue;
                             }
                             // Model/provider without function calling: retry this step without tools
-                            if ($toolsEnabled && $turnText === '' && preg_match('/tool|function/i', $e->getMessage())) {
+                            if ($toolsEnabled && $turnText === '' && self::saysToolsUnsupported($e->getMessage())) {
                                 $toolsEnabled = false;
                                 unset($payload['tools'], $payload['tool_choice']);
+                                $messages = MessageSanitizer::withoutTools($messages);
+                                $payload['messages'] = $messages;
                                 $attempt--;
                                 continue;
                             }
@@ -603,9 +702,11 @@ PROMPT;
                     'completion_tokens' => $usageActual ? $completionTotal : null,
                 ]);
             } catch (Exception $e) {
-                $hint = $e instanceof UpstreamRetryableException
-                    ? "\n\nGateway masih belum bisa dihubungi setelah " . self::MAX_UPSTREAM_ATTEMPTS . " kali percobaan. Aksi yang sudah berhasil di atas tetap tersimpan; kirim \"lanjutkan\" untuk meneruskan."
-                    : '';
+                $hint = match (true) {
+                    $e instanceof UpstreamRetryableException => "\n\nGateway masih belum bisa dihubungi setelah " . self::MAX_UPSTREAM_ATTEMPTS . " kali percobaan. Aksi yang sudah berhasil di atas tetap tersimpan; kirim \"lanjutkan\" untuk meneruskan.",
+                    $e instanceof UpstreamRequestException => "\n\nPermintaan tetap ditolak walau riwayat sudah diringkas. Aksi yang sudah berhasil di atas tetap tersimpan. Kirim \"lanjutkan\", atau mulai percakapan baru bila terus terjadi. Detail teknis tercatat di storage/logs/laravel.log (\"TokenomixAI request rejected\").",
+                    default => '',
+                };
                 $assistantMsg->update([
                     'content' => $this->activityBlock($activity) . $fullContent . "\n\n[Kesalahan Streaming]: " . $e->getMessage() . $hint,
                     'status' => 'failed',

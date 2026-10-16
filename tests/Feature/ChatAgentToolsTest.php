@@ -34,6 +34,10 @@ class ScriptedTokenomixClient extends TokenomixClient
         $this->calls[] = $payload;
         $turn = array_shift($this->turns) ?? ['text' => ''];
 
+        if (!empty($turn['reject'])) {
+            throw new \App\Exceptions\UpstreamRequestException('Error [HTTP 400] upstream_error: Request rejected by AI provider (HTTP 400). a malformed tool/function schema', 400, 'upstream_error');
+        }
+
         if (!empty($turn['fail'])) {
             if (!empty($turn['text'])) {
                 $callback($turn['text'], false, null); // partial answer before the drop
@@ -337,5 +341,42 @@ class ChatAgentToolsTest extends TestCase
         $this->assertStringContainsString('**[OK]** Menunggu GitHub Actions budi/web @c2abcde: berhasil', $reply->content);
         $this->assertStringContainsString('https://github.com/budi/web/actions/runs/78', $reply->content);
         $this->assertStringContainsString('Build sukses', $reply->content);
+    }
+
+    public function test_rejected_request_is_retried_once_with_reduced_history_and_keeps_tools(): void
+    {
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'Percakapan Baru', 'model' => 'claude-opus-5-5']);
+        $this->fakeRepo();
+
+        $client = new ScriptedTokenomixClient([
+            ['text' => 'Saya baca repo.', 'tools' => [['github_list_files', ['repo' => 'budi/web']]]],
+            ['reject' => true],
+            ['text' => 'Lanjut, sudah beres.'],
+        ]);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $body = $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'cek repo'])->streamedContent();
+
+        $this->assertCount(3, $client->calls);
+        $this->assertNotEmpty($client->calls[2]['tools'], 'tools must stay enabled after a generic 400');
+        $this->assertStringContainsString('riwayat yang diringkas', $body);
+        $reply = Message::where('conversation_id', $conv->id)->where('role', 'assistant')->first();
+        $this->assertSame('completed', $reply->status);
+        $this->assertStringContainsString('Lanjut, sudah beres.', $reply->content);
+    }
+
+    public function test_second_rejection_fails_with_message(): void
+    {
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'Percakapan Baru', 'model' => 'claude-opus-5-5']);
+        $client = new ScriptedTokenomixClient([['reject' => true], ['reject' => true], ['text' => 'tidak dipanggil']]);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'halo'])->streamedContent();
+
+        $this->assertCount(2, $client->calls);
+        $reply = Message::where('conversation_id', $conv->id)->where('role', 'assistant')->first();
+        $this->assertSame('failed', $reply->status);
     }
 }

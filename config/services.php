@@ -42,6 +42,8 @@ return [
         'chat_max_tokens' => (int) env('TOKENOMIXAI_CHAT_MAX_TOKENS', 16384),
         // Tool-call rounds per chat request before the browser auto-continues
         'agent_max_steps' => (int) env('TOKENOMIXAI_AGENT_MAX_STEPS', 50),
+        // Characters of earlier chat sent with each request (older messages are shortened/dropped)
+        'history_char_budget' => (int) env('TOKENOMIXAI_HISTORY_CHAR_BUDGET', 160000),
         // GitHub Actions monitoring: max wait per tool call, poll interval, and how long to wait for a run to appear
         'ci_wait_seconds' => (int) env('XZY_CI_WAIT_SECONDS', 900),
         'ci_poll_seconds' => (int) env('XZY_CI_POLL_SECONDS', 10),

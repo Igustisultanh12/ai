@@ -251,7 +251,8 @@ class GitHubActionsService
 
         if (strlen($out) > $maxChars) {
             $half = intdiv($maxChars, 2);
-            $out = substr($out, 0, $half) . "\n...[dipotong]...\n" . substr($out, -$half);
+            // Byte-safe cuts: a split multibyte character would make the JSON payload invalid
+            $out = mb_strcut($out, 0, $half, 'UTF-8') . "\n...[dipotong]...\n" . mb_strcut($out, strlen($out) - $half, null, 'UTF-8');
         }
 
         return $out;

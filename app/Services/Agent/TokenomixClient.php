@@ -3,6 +3,7 @@
 namespace App\Services\Agent;
 
 use App\Models\AgentConfig;
+use App\Exceptions\UpstreamRequestException;
 use App\Exceptions\UpstreamRetryableException;
 use Exception;
 use Illuminate\Http\Client\ConnectionException;
@@ -213,10 +214,20 @@ class TokenomixClient
         $payload['stream'] = true;
         // Request stream options for usage if supported
         $payload['stream_options'] = ['include_usage' => true];
+        // Repair shapes that Anthropic/other providers reject with HTTP 400
+        if (isset($payload['messages']) && is_array($payload['messages'])) {
+            $payload['messages'] = MessageSanitizer::sanitize($payload['messages']);
+        }
+        // Invalid UTF-8 (e.g. a file cut in the middle of a character) used to make json_encode
+        // return false, which sent an empty body that the gateway rejected with 400
+        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($body === false) {
+            throw new Exception('Gagal menyusun permintaan ke TokenomixAI: ' . json_last_error_msg());
+        }
 
         $ch = curl_init("{$this->baseUrl}/chat/completions");
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Authorization: Bearer ' . $this->apiKey,
             'Content-Type: application/json',
@@ -340,6 +351,22 @@ class TokenomixClient
 
             if ($retryable) {
                 throw new UpstreamRetryableException($message, is_numeric($retryAfter) ? (int) $retryAfter : null);
+            }
+
+            // Refused request: record what was sent (shape only, no content) for storage/logs/laravel.log
+            Log::warning('TokenomixAI request rejected', [
+                'status' => $status,
+                'code' => $code,
+                'message' => mb_substr((string) ($error['message'] ?? $rawBody), 0, 600),
+                'model' => $payload['model'] ?? null,
+                'tools' => count($payload['tools'] ?? []),
+                'max_tokens' => $payload['max_tokens'] ?? null,
+                'body_bytes' => strlen($body),
+                'payload' => MessageSanitizer::describe($payload['messages'] ?? []),
+            ]);
+
+            if ($status >= 400 && $status < 500) {
+                throw new UpstreamRequestException($message, $status, $code);
             }
             throw new Exception($message);
         }

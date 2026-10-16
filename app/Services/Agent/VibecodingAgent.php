@@ -179,7 +179,7 @@ class VibecodingAgent
                 $checkpoint = $this->workspace->createCheckpoint(
                     $project,
                     $user->id,
-                    "Sebelum iterasi {$iteration}: " . substr($prompt, 0, 40)
+                    "Sebelum iterasi {$iteration}: " . mb_substr($prompt, 0, 40)
                 );
 
                 // 6. Apply patches safely
@@ -199,7 +199,7 @@ class VibecodingAgent
                     $this->workspace->createCheckpoint(
                         $project,
                         $user->id,
-                        "Vibecoding selesai: " . substr($prompt, 0, 50),
+                        "Vibecoding selesai: " . mb_substr($prompt, 0, 50),
                         'passed',
                         'passed'
                     );

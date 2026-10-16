@@ -237,7 +237,7 @@ class ChatToolbox
     {
         $json = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
         if (strlen($json) > self::MAX_RESULT_CHARS) {
-            $json = substr($json, 0, self::MAX_RESULT_CHARS) . '... [hasil dipotong karena terlalu panjang; baca lebih sedikit berkas per panggilan]';
+            $json = mb_strcut($json, 0, self::MAX_RESULT_CHARS, 'UTF-8') . '... [hasil dipotong karena terlalu panjang; baca lebih sedikit berkas per panggilan]';
         }
         return $json;
     }
@@ -257,7 +257,7 @@ class ChatToolbox
         foreach (array_slice($toolIdx, 0, max(0, count($toolIdx) - $keepRecent)) as $i) {
             $content = (string) $messages[$i]['content'];
             if (strlen($content) > self::OLD_RESULT_CHARS) {
-                $messages[$i]['content'] = substr($content, 0, self::OLD_RESULT_CHARS)
+                $messages[$i]['content'] = mb_strcut($content, 0, self::OLD_RESULT_CHARS, 'UTF-8')
                     . '... [hasil lama diringkas untuk menghemat token; panggil tool lagi bila butuh isi lengkap]';
             }
         }
