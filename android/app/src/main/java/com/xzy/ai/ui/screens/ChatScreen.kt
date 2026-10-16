@@ -224,8 +224,8 @@ fun ChatScreen(id: String) {
                         }
                     }
                 }
-                AnimatedVisibility(!atBottom && rows.isNotEmpty(), modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
-                    IconSquare(Icons.Rounded.KeyboardArrowDown, bg = Brand.Ink, tint = Color.White) { scope.launch { listState.animateScrollToItem(0) } }
+                ScrollDownButton(!atBottom && rows.isNotEmpty(), Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                    scope.launch { listState.animateScrollToItem(0) }
                 }
             }
 
@@ -264,6 +264,14 @@ fun ChatScreen(id: String) {
             deleting = false
             vm.delete { toast("Percakapan dihapus"); nav.popBackStack() }
         }, onDismiss = { deleting = false })
+    }
+}
+
+/** Kept outside the Column so AnimatedVisibility does not pick the ColumnScope overload. */
+@Composable
+private fun ScrollDownButton(visible: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    AnimatedVisibility(visible, modifier = modifier, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
+        IconSquare(Icons.Rounded.KeyboardArrowDown, bg = Brand.Ink, tint = Color.White, onClick = onClick)
     }
 }
 
