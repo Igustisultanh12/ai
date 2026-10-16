@@ -3,6 +3,8 @@ package com.xzy.ai.ui.screens.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.xzy.ai.data.repository.AuthRepository
+import com.xzy.ai.utils.onFailure
+import com.xzy.ai.utils.onSuccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
