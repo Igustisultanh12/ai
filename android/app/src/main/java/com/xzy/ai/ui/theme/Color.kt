@@ -153,3 +153,11 @@ val SurfaceBright = SurfaceLight2
 val GradientStart = Color(0xFF06B6D4)
 val GradientMiddle = Color(0xFF8B5CF6)
 val GradientEnd = Color(0xFFEC4899)
+
+// Brutal/Neo-brutalism aliases (for NavigationDrawer and other components)
+val BrutalSurface = Surface2
+val BrutalInk = Color(0xFFFFFFFF)  // Pure white text
+val BrutalLime = BrandLime
+val BrutalMuted = Color(0xFF94A3B8)  // Muted text/icons
+val BrutalBrandStart = BrandLime
+val BrutalBrandEnd = BrandViolet

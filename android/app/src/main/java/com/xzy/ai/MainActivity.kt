@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -121,7 +123,7 @@ fun XzyAppNavigation(
                                     scope.launch { drawerState.open() }
                                 }) {
                                     Icon(
-                                        imageVector = androidx.compose.material.icons.Icons.Default.Menu,
+                                        imageVector = Icons.Default.Menu,
                                         contentDescription = "Menu"
                                     )
                                 }
@@ -163,10 +165,10 @@ fun XzyAppNavigation(
 
                     // Main screens
                     composable(Screen.Dashboard.route) {
-                        DashboardScreen(navController = navController)
+                        DashboardScreen()
                     }
                     composable(Screen.Projects.route) {
-                        ProjectsScreen(navController = navController)
+                        ProjectsScreen()
                     }
                     composable(
                         route = Screen.Chat.route,
@@ -202,7 +204,9 @@ fun XzyAppNavigation(
                         val projectId = backStackEntry.arguments?.getString("id") ?: ""
                         WorkspaceScreen(
                             projectId = projectId,
-                            navController = navController
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            }
                         )
                     }
                 }

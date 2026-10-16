@@ -51,11 +51,11 @@ fun AppNavigationDrawer(
                             launchSingleTop = true
                             restoreState = true
                         }
-                        kotlinx.coroutines.launch { drawerState.close() }
+                        scope.launch { drawerState.close() }
                     },
                     onLogout = {
                         onLogout()
-                        kotlinx.coroutines.launch { drawerState.close() }
+                        scope.launch { drawerState.close() }
                     }
                 )
             }
