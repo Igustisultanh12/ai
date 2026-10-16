@@ -287,4 +287,55 @@ class ChatAgentToolsTest extends TestCase
         $this->assertStringNotContainsString("\n...", $reply->content);
         $this->assertStringContainsString('dilanjutkan otomatis', $reply->content);
     }
+
+    public function test_agent_waits_for_ci_reads_failure_fixes_and_waits_again(): void
+    {
+        config(['services.tokenomix.ci_poll_seconds' => 0]);
+        $user = $this->user();
+        $conv = Conversation::create(['user_id' => $user->id, 'title' => 'Percakapan Baru', 'model' => 'glm-5.1']);
+
+        $run = fn (int $id, string $conclusion) => [
+            'id' => $id, 'name' => 'Android CI', 'status' => 'completed', 'conclusion' => $conclusion, 'event' => 'push',
+            'head_branch' => 'main', 'head_sha' => 'c2abcdef00000000000000000000000000000000',
+            'html_url' => "https://github.com/budi/web/actions/runs/{$id}", 'run_started_at' => '2026-10-16T00:00:00Z',
+        ];
+        Http::fake([
+            'api.github.com/repos/budi/web/actions/runs?*' => Http::sequence()
+                ->push(['workflow_runs' => [$run(77, 'failure')]])
+                ->push(['workflow_runs' => [$run(78, 'success')]]),
+            'api.github.com/repos/budi/web/actions/runs/77/jobs*' => Http::response(['jobs' => [
+                ['id' => 501, 'name' => 'build', 'conclusion' => 'failure', 'steps' => [['name' => 'Gradle build', 'conclusion' => 'failure']]],
+            ]]),
+            'api.github.com/repos/budi/web/check-runs/501/annotations*' => Http::response([]),
+            'api.github.com/repos/budi/web/actions/jobs/501/logs' => Http::response("e: MainActivity.kt:12:5 Unresolved reference: Text\n"),
+            'api.github.com/repos/budi/web/actions/runs/78/artifacts*' => Http::response(['artifacts' => [['name' => 'app-debug.apk', 'size_in_bytes' => 1]]]),
+            'api.github.com/repos/budi/web/releases*' => Http::response([]),
+        ]);
+        $this->fakeRepo();
+
+        $push = ['github_push_files', ['repo' => 'budi/web', 'commit_message' => 'feat: app', 'files' => [['path' => 'MainActivity.kt', 'content' => 'x']]]];
+        $client = new ScriptedTokenomixClient([
+            ['tools' => [$push]],
+            ['tools' => [['github_wait_workflow', ['repo' => 'budi/web', 'head_sha' => 'c2abcdef']]]],
+            ['tools' => [['github_workflow_logs', ['repo' => 'budi/web', 'run_id' => 77]]]],
+            ['tools' => [$push]],
+            ['tools' => [['github_wait_workflow', ['repo' => 'budi/web', 'head_sha' => 'c2abcdef']]]],
+            ['text' => 'Build sukses, APK tersedia.'],
+        ]);
+        $this->app->instance(TokenomixClient::class, $client);
+
+        $body = $this->actingAs($user)->post("/api/conversations/{$conv->id}/stream", ['content' => 'buat aplikasinya sampai jadi'])->streamedContent();
+
+        $this->assertCount(6, $client->calls);
+        $toolMsgs = array_values(array_filter($client->calls[3]['messages'], fn ($m) => $m['role'] === 'tool'));
+        $this->assertStringContainsString('Unresolved reference: Text', end($toolMsgs)['content']);
+        $lastTool = array_values(array_filter($client->calls[5]['messages'], fn ($m) => $m['role'] === 'tool'));
+        $this->assertStringContainsString('app-debug.apk', end($lastTool)['content']);
+
+        $reply = Message::where('conversation_id', $conv->id)->where('role', 'assistant')->first();
+        $this->assertStringContainsString('**[GAGAL]** Menunggu GitHub Actions budi/web @c2abcde: gagal', $reply->content);
+        $this->assertStringContainsString('**[OK]** Menunggu GitHub Actions budi/web @c2abcde: berhasil', $reply->content);
+        $this->assertStringContainsString('https://github.com/budi/web/actions/runs/78', $reply->content);
+        $this->assertStringContainsString('Build sukses', $reply->content);
+    }
 }

@@ -273,7 +273,7 @@ const suggestions = [
     { icon: 'code', text: 'Buatkan REST API CRUD produk dengan Laravel 12 lengkap dengan validasi' },
     { icon: 'github', text: 'Lihat isi repo GitHub saya lalu jelaskan strukturnya' },
     { icon: 'wand', text: 'Rapikan dan refactor komponen Vue ini agar lebih mudah dibaca' },
-    { icon: 'shield', text: 'Cek potensi celah keamanan di controller autentikasi saya' },
+    { icon: 'rocket', text: 'Push perbaikan ke repo saya lalu pantau GitHub Actions sampai build sukses' },
 ];
 
 // Fill the composer with a starter prompt so the user can tweak it before sending
@@ -692,7 +692,8 @@ const waitForServerResult = async (convId: string, startedAt?: number) => {
     isWaitingServer.value = true;
     isStreaming.value = true;
     writingProgress.value = '';
-    const deadline = Date.now() + 20 * 60 * 1000;
+    // Agent jobs that wait for GitHub Actions can run long
+    const deadline = Date.now() + 60 * 60 * 1000;
 
     try {
         while (Date.now() < deadline && activeConvId.value === convId) {
@@ -720,7 +721,7 @@ const waitForServerResult = async (convId: string, startedAt?: number) => {
             break;
         }
         if (Date.now() >= deadline) {
-            toast.warning('AI belum selesai setelah 20 menit. Buka lagi percakapan ini nanti untuk melihat hasilnya.');
+            toast.warning('AI belum selesai setelah 60 menit. Buka lagi percakapan ini nanti untuk melihat hasilnya.');
         }
     } finally {
         streamingText.value = '';

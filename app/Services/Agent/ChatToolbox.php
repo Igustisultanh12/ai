@@ -5,6 +5,7 @@ namespace App\Services\Agent;
 use App\Models\Conversation;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\GitHub\GitHubActionsService;
 use App\Services\GitHub\GitHubService;
 use App\Services\Sandbox\WorkspaceManager;
 use Illuminate\Support\Facades\Log;
@@ -21,10 +22,23 @@ class ChatToolbox
     public const MAX_RESULT_CHARS = 40000;
     public const OLD_RESULT_CHARS = 2500;
 
+    /** @var array{tick: ?callable, stop: ?callable, status: ?callable} */
+    protected array $runtime = ['tick' => null, 'stop' => null, 'status' => null];
+
     public function __construct(
         protected GitHubService $github,
-        protected WorkspaceManager $workspace
+        protected WorkspaceManager $workspace,
+        protected GitHubActionsService $actions
     ) {
+    }
+
+    /**
+     * Hooks for long-running tools (waiting for CI): keep the stream alive,
+     * honour the stop button, and show live status in the activity panel.
+     */
+    public function setRuntime(?callable $tick, ?callable $shouldStop, ?callable $onStatus): void
+    {
+        $this->runtime = ['tick' => $tick, 'stop' => $shouldStop, 'status' => $onStatus];
     }
 
     public function definitions(): array
@@ -80,6 +94,25 @@ class ChatToolbox
                 'private' => ['type' => 'boolean', 'description' => 'Repo privat (default true)'],
                 'description' => ['type' => 'string'],
             ], ['name']),
+            $fn('github_workflow_runs', 'Daftar workflow run GitHub Actions terbaru (status & hasil) untuk repo, branch, atau commit tertentu.', [
+                'repo' => $repo,
+                'branch' => $branch,
+                'head_sha' => ['type' => 'string', 'description' => 'SHA commit (opsional)'],
+            ], ['repo']),
+            $fn('github_wait_workflow', 'Menunggu GitHub Actions selesai untuk sebuah commit (head_sha dari hasil push) atau run_id, lalu mengembalikan hasilnya (success/failure, artifact, release). Bisa menunggu hingga belasan menit; panggil lagi jika statusnya still_running.', [
+                'repo' => $repo,
+                'head_sha' => ['type' => 'string', 'description' => 'SHA commit hasil push (commit_sha)'],
+                'run_id' => ['type' => 'integer', 'description' => 'ID workflow run (opsional, untuk melanjutkan menunggu)'],
+                'branch' => $branch,
+            ], ['repo']),
+            $fn('github_workflow_logs', 'Membaca penyebab workflow run gagal: job & step yang gagal, anotasi error (file:baris), dan potongan log yang relevan.', [
+                'repo' => $repo,
+                'run_id' => ['type' => 'integer', 'description' => 'ID workflow run yang gagal'],
+            ], ['repo', 'run_id']),
+            $fn('github_rerun_workflow', 'Menjalankan ulang job yang gagal pada workflow run (untuk kegagalan sementara seperti jaringan/timeout, bukan error kode).', [
+                'repo' => $repo,
+                'run_id' => ['type' => 'integer'],
+            ], ['repo', 'run_id']),
             $fn('clone_repo_to_project', 'Clone/impor repositori GitHub menjadi proyek XZY (berkas teks disalin ke workspace) dan hubungkan percakapan ini ke proyek tersebut.', [
                 'repo' => $repo,
                 'branch' => $branch,
@@ -115,6 +148,10 @@ class ChatToolbox
             'github_read_files' => "Membaca {$count('paths')} berkas dari {$repo}",
             'github_push_files' => "Push {$count('files')} berkas ke {$repo}" . (!empty($args['branch']) ? ":{$args['branch']}" : ''),
             'github_create_repo' => 'Membuat repo ' . ($args['name'] ?? ''),
+            'github_workflow_runs' => "Melihat GitHub Actions {$repo}",
+            'github_wait_workflow' => "Menunggu GitHub Actions {$repo}" . (!empty($args['head_sha']) ? ' @' . substr((string) $args['head_sha'], 0, 7) : ''),
+            'github_workflow_logs' => "Membaca log workflow gagal di {$repo}",
+            'github_rerun_workflow' => "Menjalankan ulang workflow di {$repo}",
             'clone_repo_to_project' => "Clone {$repo} ke proyek",
             'project_list_files' => 'Melihat berkas proyek',
             'project_read_files' => "Membaca {$count('paths')} berkas proyek",
@@ -155,6 +192,20 @@ class ChatToolbox
                     (bool) ($args['private'] ?? true),
                     $args['description'] ?? null
                 ),
+                'github_workflow_runs' => $this->actions->listRuns($user, (string) $args['repo'], $args['branch'] ?? null, $args['head_sha'] ?? null),
+                'github_wait_workflow' => $this->actions->waitForRuns(
+                    $user,
+                    (string) $args['repo'],
+                    isset($args['head_sha']) ? (string) $args['head_sha'] : null,
+                    !empty($args['run_id']) ? (int) $args['run_id'] : null,
+                    $args['branch'] ?? null,
+                    null,
+                    $this->runtime['tick'],
+                    $this->runtime['stop'],
+                    $this->runtime['status']
+                ),
+                'github_workflow_logs' => $this->actions->failureDetails($user, (string) $args['repo'], (int) ($args['run_id'] ?? 0)),
+                'github_rerun_workflow' => $this->actions->rerun($user, (string) $args['repo'], (int) ($args['run_id'] ?? 0)),
                 'clone_repo_to_project' => $this->cloneToProject($args, $user, $conversation),
                 'project_list_files' => $this->projectListFiles($user, $conversation),
                 'project_read_files' => $this->projectReadFiles($args, $user, $conversation),

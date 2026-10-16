@@ -42,6 +42,7 @@ class ConversationController extends Controller
 Kamu adalah asisten pemrograman AI XZY. Jawab dalam bahasa yang dipakai pengguna.
 Gaya jawaban: rapi dengan markdown, tanpa emoji atau emotikon.
 Di antara pemanggilan tool, tulis paling banyak satu kalimat singkat tentang langkah berikutnya, atau tidak sama sekali; jangan menulis "..." saja.
+Pantau GitHub Actions sampai aplikasi benar-benar jadi: setelah push ke repo yang punya .github/workflows (atau bila pengguna minta build/APK/release/deploy), panggil github_wait_workflow dengan head_sha = commit_sha hasil push. Jika conclusion "failure": panggil github_workflow_logs untuk run yang gagal, baca berkas terkait, perbaiki akar masalahnya, push lagi, lalu tunggu lagi. Ulangi sampai success. Jika status "still_running", panggil github_wait_workflow lagi dengan run_id. Gunakan github_rerun_workflow hanya untuk kegagalan sementara (jaringan/timeout runner). Jika error yang sama muncul 3 kali berturut-turut atau penyebabnya di luar kode (secret belum diisi, izin token, kuota Actions), berhenti dan jelaskan ke pengguna apa yang perlu ia lakukan. Saat berhasil, laporkan link run, artifact, dan release (beserta link unduhan aset) bila ada.
 Untuk pekerjaan besar yang butuh banyak langkah, kerjakan terus sampai selesai tanpa menunggu konfirmasi; ketika pesan pengguna hanya "lanjutkan", teruskan dari langkah terakhir tanpa mengulang yang sudah berhasil.
 Jika kamu menulis isi sebuah berkas kode, beri label path relatif berkas tersebut pada pembuka blok kode dengan format ```bahasa:path/ke/berkas.ext (contoh: ```php:app/Http/Controllers/UserController.php), dan tulis isi berkas secara lengkap, bukan potongan, agar pengguna bisa langsung push ke GitHub dari chat.
 Untuk potongan kode contoh yang bukan berkas utuh, gunakan blok kode biasa tanpa path.
@@ -513,12 +514,44 @@ PROMPT;
                             $stopped = true;
                             $toolResult = ['error' => 'Dibatalkan oleh pengguna.'];
                         } else {
+                            // Long tools (waiting for GitHub Actions) report live status and honour "Berhenti"
+                            $lastStatusAt = 0.0;
+                            $toolbox->setRuntime(
+                                $heartbeat,
+                                fn () => Cache::has($stopRequestedKey),
+                                function (string $status) use ($send, $call, $label, &$lastStatusAt) {
+                                    if (microtime(true) - $lastStatusAt >= 5) {
+                                        $lastStatusAt = microtime(true);
+                                        $send(['event' => 'tool', 'status' => 'running', 'id' => $call['id'], 'label' => "{$label} · {$status}"]);
+                                    }
+                                }
+                            );
                             $toolResult = $toolbox->execute($name, $args, $user, $conversation);
+                            $toolbox->setRuntime(null, null, null);
                             $conversation->refresh();
+                            if (($toolResult['status'] ?? null) === 'stopped') {
+                                $stopped = true;
+                            }
+                        }
+
+                        // CI result: show it in the label and mark a failed build as failed
+                        if (in_array($name, ['github_wait_workflow'], true) && !isset($toolResult['error'])) {
+                            $ci = $toolResult['conclusion'] ?? $toolResult['status'] ?? null;
+                            $label .= match ($ci) {
+                                'success' => ': berhasil',
+                                'failure' => ': gagal',
+                                'still_running' => ': masih berjalan',
+                                'not_found' => ': tidak ada workflow',
+                                default => '',
+                            };
+                            $toolResult['link'] = $toolResult['runs'][0]['url'] ?? null;
+                            if (in_array($ci, ['failure', 'not_found'], true)) {
+                                $toolResult['error'] = $ci === 'failure' ? 'Workflow gagal' : ($toolResult['message'] ?? 'Workflow tidak ditemukan');
+                            }
                         }
 
                         $ok = !isset($toolResult['error']) || isset($toolResult['content']);
-                        $link = $toolResult['commit_url'] ?? $toolResult['url'] ?? null;
+                        $link = $toolResult['commit_url'] ?? $toolResult['url'] ?? $toolResult['link'] ?? null;
                         $send([
                             'event' => 'tool',
                             'status' => $ok ? 'done' : 'error',

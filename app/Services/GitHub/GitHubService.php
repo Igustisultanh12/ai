@@ -442,11 +442,20 @@ class GitHubService
             ]);
         }
 
+        // Workflow files need an extra token permission on top of Contents
+        $touchesWorkflows = (bool) array_filter(
+            array_merge(array_keys($filesToPush), $pushedFirst ?? [], $deletePaths ?? []),
+            fn ($p) => str_starts_with((string) $p, '.github/workflows/')
+        );
+        $workflowHint = $touchesWorkflows && !$updateRefRes->successful()
+            ? ' Commit ini mengubah berkas .github/workflows: token juga perlu izin workflow (classic token: scope "workflow"; fine-grained token: Workflows = Read and write).'
+            : '';
+
         if (in_array($updateRefRes->status(), [403, 404], true) && !str_contains((string) $updateRefRes->json('message'), 'fast')) {
-            throw new Exception($this->accessError($repoFullName, $updateRefRes->status(), true));
+            throw new Exception($this->accessError($repoFullName, $updateRefRes->status(), true) . $workflowHint);
         }
         if (!$updateRefRes->successful()) {
-            $errorBody = (string) ($updateRefRes->json('message') ?? $updateRefRes->body());
+            $errorBody = (string) ($updateRefRes->json('message') ?? $updateRefRes->body()) . $workflowHint;
             if (stripos($errorBody, 'fast forward') !== false || stripos($errorBody, 'fast-forward') !== false || $updateRefRes->status() === 409) {
                 throw new Exception("Konflik remote terdeteksi (non-fast-forward). Branch {$branch} berubah selama push. Coba push ulang.");
             }
@@ -697,6 +706,16 @@ class GitHubService
     /**
      * @return array{0: string, 1: \Closure}
      */
+    /**
+     * Authenticated API client for one repository (used by GitHubActionsService).
+     *
+     * @return array{0: string, 1: \Closure}
+     */
+    public function apiClient(User $user, string $repo): array
+    {
+        return $this->repoClient($user, $repo);
+    }
+
     protected function repoClient(User $user, string $repo): array
     {
         $token = $this->getUserToken($user);
