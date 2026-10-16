@@ -61,25 +61,12 @@ fun XzyAppNavigation(
                     navController.navigate("login") {
                         popUpTo("splash") { inclusive = true }
                     }
-                },
-                onNavigateToHome = {
-                    navController.navigate("chat") {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                },
-                isLoggedIn = isLoggedIn
+                }
             )
         }
         composable("login") {
             LoginScreen(
-                onNavigateToRegister = {
-                    navController.navigate("register")
-                },
-                onLoginSuccess = {
-                    navController.navigate("chat") {
-                        popUpTo("login") { inclusive = true }
-                    }
-                }
+                navController = navController
             )
         }
         composable("register") {
@@ -96,7 +83,7 @@ fun XzyAppNavigation(
         }
         composable("chat") {
             ChatScreen(
-                onLogout = {
+                onNavigateBack = {
                     onLogout()
                     navController.navigate("login") {
                         popUpTo("chat") { inclusive = true }

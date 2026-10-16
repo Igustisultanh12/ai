@@ -46,7 +46,7 @@ fun AnimatedGradientButton(
     enabled: Boolean = true,
     isLoading: Boolean = false,
     icon: ImageVector? = null,
-    gradient: List<Color> = listOf(BrightCyan, ElectricPurple, VividMagenta)
+    gradient: List<Color> = listOf(AccentCyan, DeepPurple, VibrantPink)
 ) {
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -149,16 +149,16 @@ fun ShimmerBox(
                 if (isLoading) {
                     Brush.linearGradient(
                         colors = listOf(
-                            SurfaceLevel2.copy(alpha = 0.3f),
-                            SurfaceLevel3.copy(alpha = 0.5f),
-                            SurfaceLevel2.copy(alpha = 0.3f)
+                            Surface2.copy(alpha = 0.3f),
+                            Surface3.copy(alpha = 0.5f),
+                            Surface2.copy(alpha = 0.3f)
                         ),
                         start = Offset(offset, offset),
                         end = Offset(offset + 400f, offset + 400f)
                     )
                 } else {
                     Brush.linearGradient(
-                        colors = listOf(SurfaceLevel2, SurfaceLevel2)
+                        colors = listOf(Surface2, Surface2)
                     )
                 }
             )
@@ -452,7 +452,7 @@ fun GlowingCard(
             ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = SurfaceLevel2
+            containerColor = Surface2
         ),
         elevation = CardDefaults.cardElevation(8.dp)
     ) {
