@@ -20,12 +20,12 @@ class AuthRepository @Inject constructor(
             val response = apiService.login(LoginRequest(email, password))
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
-                tokenManager.saveToken(body.data.token)
+                tokenManager.saveToken(body.token)
                 val user = User(
-                    id = body.data.user.id,
-                    name = body.data.user.name,
-                    email = body.data.user.email,
-                    avatar = body.data.user.avatar
+                    id = body.user.id,
+                    name = body.user.name,
+                    email = body.user.email,
+                    avatar = body.user.avatar
                 )
                 Result.Success(user)
             } else {
@@ -36,19 +36,24 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    suspend fun register(name: String, email: String, password: String): Result<User> {
+    suspend fun register(
+        name: String,
+        email: String,
+        password: String,
+        passwordConfirmation: String = password
+    ): Result<User> {
         return try {
             val response = apiService.register(
-                RegisterRequest(name, email, password, password)
+                RegisterRequest(name, email, password, passwordConfirmation)
             )
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
-                tokenManager.saveToken(body.data.token)
+                tokenManager.saveToken(body.token)
                 val user = User(
-                    id = body.data.user.id,
-                    name = body.data.user.name,
-                    email = body.data.user.email,
-                    avatar = body.data.user.avatar
+                    id = body.user.id,
+                    name = body.user.name,
+                    email = body.user.email,
+                    avatar = body.user.avatar
                 )
                 Result.Success(user)
             } else {
@@ -76,7 +81,7 @@ class AuthRepository @Inject constructor(
 
     suspend fun getCurrentUser(): Result<User> {
         return try {
-            val response = apiService.getCurrentUser()
+            val response = apiService.getUser()
             if (response.isSuccessful && response.body() != null) {
                 val dto = response.body()!!.data
                 val user = User(

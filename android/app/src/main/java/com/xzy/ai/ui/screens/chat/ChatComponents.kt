@@ -27,15 +27,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.xzy.ai.data.remote.dto.ConversationDto
-import com.xzy.ai.data.remote.dto.MessageDto
+import com.xzy.ai.data.model.Conversation
+import com.xzy.ai.data.model.Message
 import com.xzy.ai.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
 fun MessagesList(
-    messages: List<MessageDto>,
+    messages: List<Message>,
     scrollState: LazyListState,
     modifier: Modifier = Modifier
 ) {
@@ -47,21 +47,15 @@ fun MessagesList(
     ) {
         items(messages, key = { it.id }) { message ->
             MessageItem(
-                message = message,
-                modifier = Modifier.animateItemPlacement(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
-                )
+                message = message
             )
         }
     }
 }
 
 @Composable
-fun MessageItem(message: MessageDto, modifier: Modifier = Modifier) {
-    val isUser = message.role == "user"
+fun MessageItem(message: Message, modifier: Modifier = Modifier) {
+    val isUser = message.isUser
     
     // Scale animation on appear
     var visible by remember { mutableStateOf(false) }
@@ -146,7 +140,7 @@ fun MessageItem(message: MessageDto, modifier: Modifier = Modifier) {
             
             // Timestamp
             Text(
-                text = formatTimestamp(message.created_at),
+                text = if (message.formattedTime.isNotBlank()) message.formattedTime else formatTimestamp(message.timestamp),
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
@@ -228,13 +222,16 @@ fun ChatInputBar(
             )
             
             FloatingActionButton(
-                onClick = onSend,
+                onClick = {
+                    if (message.isNotBlank() && !isSending && enabled) {
+                        onSend()
+                    }
+                },
                 modifier = Modifier
                     .size(56.dp)
                     .scale(scale),
                 containerColor = ElectricBlue,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
-                enabled = message.isNotBlank() && !isSending && enabled
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
             ) {
                 if (isSending) {
                     CircularProgressIndicator(
@@ -408,13 +405,176 @@ fun ErrorCard(error: String) {
     }
 }
 
-private fun formatTimestamp(timestamp: String): String {
+private fun formatTimestamp(timestamp: Long): String {
     return try {
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", Locale.getDefault())
         val outputFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val date = inputFormat.parse(timestamp)
-        date?.let { outputFormat.format(it) } ?: timestamp
+        outputFormat.format(Date(timestamp))
     } catch (e: Exception) {
-        timestamp
+        ""
     }
 }
+
+@Composable
+fun ConversationDrawer(
+    conversations: List<Conversation>,
+    selectedConversationId: String?,
+    onConversationSelect: (String) -> Unit,
+    onNewConversation: () -> Unit,
+    onDeleteConversation: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(onClick = onClose)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(300.dp)
+                .clickable(enabled = false) {},
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            shadowElevation = 16.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Percakapan",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Tutup",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // New conversation button
+                Button(
+                    onClick = onNewConversation,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ElectricBlue
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Percakapan Baru", fontWeight = FontWeight.SemiBold)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // List of conversations
+                if (conversations.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Belum ada percakapan",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            fontSize = 14.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(conversations, key = { it.id }) { conversation ->
+                            val isSelected = conversation.id == selectedConversationId
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onConversationSelect(conversation.id) },
+                                color = if (isSelected) {
+                                    ElectricBlue.copy(alpha = 0.15f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Chat,
+                                            contentDescription = null,
+                                            tint = if (isSelected) ElectricBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = conversation.title.ifBlank { "Percakapan Baru" },
+                                            fontSize = 14.sp,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isSelected) ElectricBlue else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onDeleteConversation(conversation.id) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Hapus",
+                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

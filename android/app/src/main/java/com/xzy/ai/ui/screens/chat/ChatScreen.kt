@@ -23,7 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.xzy.ai.data.remote.dto.MessageDto
+import com.xzy.ai.data.model.Conversation
+import com.xzy.ai.data.model.Message
 import com.xzy.ai.ui.theme.*
 import kotlinx.coroutines.launch
 

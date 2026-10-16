@@ -19,3 +19,10 @@ inline fun <T> Result<T>.onError(action: (String) -> Unit): Result<T> {
     }
     return this
 }
+
+inline fun <T> Result<T>.onFailure(action: (Throwable) -> Unit): Result<T> {
+    if (this is Result.Error) {
+        action(Exception(message))
+    }
+    return this
+}

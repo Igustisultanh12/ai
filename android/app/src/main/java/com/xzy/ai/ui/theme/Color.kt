@@ -71,3 +71,12 @@ val ShimmerColorDark = listOf(
     Color(0xFF2D2D2D),
     Color(0xFF1F1F1F)
 )
+
+val ErrorLight = Color(0xFFEF4444)
+val ErrorDark = Color(0xFFDC2626)
+
+val ElectricBlue = Color(0xFF06B6D4)
+val VibrantPink = Color(0xFFEC4899)
+val DeepPurple = Color(0xFF7C3AED)
+val NeonOrange = Color(0xFFFB923C)
+
